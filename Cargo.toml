@@ -1,0 +1,3 @@
+[workspace]
+members = ["crates/spectacular", "crates/spectacular-macros"]
+resolver = "2"

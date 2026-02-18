@@ -1,0 +1,21 @@
+[package]
+name = "spectacular"
+version = "0.1.0"
+edition = "2024"
+description = "An RSpec-inspired test framework for Rust with grouped execution, randomized ordering, and stackable hooks"
+license = "MIT"
+
+[dependencies]
+inventory = "0.3"
+rand = "0.10"
+spectacular-macros = { path = "../spectacular-macros" }
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"
+harness = false
+
+[[test]]
+name = "failure_handling"
+path = "tests/failure_handling.rs"
+harness = false
