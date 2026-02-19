@@ -1,87 +1,55 @@
-pub mod report;
-pub mod runner;
-pub mod types;
-
-pub use inventory;
-
-pub use spectacular_macros::{after, after_each, before, before_each, test_case, test_suite};
-
-#[macro_export]
-macro_rules! suite_before {
-    ($f:expr) => {
-        $crate::inventory::submit! {
-            $crate::types::SuiteHook {
-                kind: $crate::types::SuiteHookKind::Before,
-                hook_fn: {
-                    fn __spectacular_suite_before() { ($f)() }
-                    __spectacular_suite_before
-                },
-            }
-        }
-    };
-}
-
-#[macro_export]
-macro_rules! suite_after {
-    ($f:expr) => {
-        $crate::inventory::submit! {
-            $crate::types::SuiteHook {
-                kind: $crate::types::SuiteHookKind::After,
-                hook_fn: {
-                    fn __spectacular_suite_after() { ($f)() }
-                    __spectacular_suite_after
-                },
-            }
-        }
-    };
-}
-
-#[macro_export]
-macro_rules! suite_before_each {
-    ($f:expr) => {
-        $crate::inventory::submit! {
-            $crate::types::SuiteHook {
-                kind: $crate::types::SuiteHookKind::BeforeEach,
-                hook_fn: {
-                    fn __spectacular_suite_before_each() { ($f)() }
-                    __spectacular_suite_before_each
-                },
-            }
-        }
-    };
-}
-
-#[macro_export]
-macro_rules! suite_after_each {
-    ($f:expr) => {
-        $crate::inventory::submit! {
-            $crate::types::SuiteHook {
-                kind: $crate::types::SuiteHookKind::AfterEach,
-                hook_fn: {
-                    fn __spectacular_suite_after_each() { ($f)() }
-                    __spectacular_suite_after_each
-                },
-            }
-        }
-    };
-}
-
-#[macro_export]
-macro_rules! test_runner {
-    () => {
-        fn main() {
-            let result = $crate::runner::run();
-            std::process::exit(if result.all_passed() { 0 } else { 1 });
-        }
-    };
-}
+pub use spectacular_macros::{
+    after, after_each, before, before_each, spec, suite, test_case, test_suite,
+};
 
 pub mod prelude {
-    pub use crate::types::{
-        SuiteHook, SuiteHookKind, SuiteResult, TestCase, TestGroup, TestOutcome, TestResult,
-    };
-    pub use crate::{suite_after, suite_after_each, suite_before, suite_before_each, test_runner};
     pub use spectacular_macros::{
-        after, after_each, before, before_each, spec, test_case, test_suite,
+        after, after_each, before, before_each, spec, suite, test_case, test_suite,
     };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::prelude::*;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+    static UNIT_SUITE_BEFORE: AtomicBool = AtomicBool::new(false);
+    static UNIT_SUITE_BEFORE_EACH: AtomicUsize = AtomicUsize::new(0);
+    static UNIT_SUITE_AFTER_EACH: AtomicUsize = AtomicUsize::new(0);
+
+    suite! {
+        before {
+            UNIT_SUITE_BEFORE.store(true, Ordering::SeqCst);
+        }
+        before_each {
+            UNIT_SUITE_BEFORE_EACH.fetch_add(1, Ordering::SeqCst);
+        }
+        after_each {
+            UNIT_SUITE_AFTER_EACH.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    spec! {
+        mod suite_in_unit_tests {
+            use super::*;
+            suite;
+
+            it "suite hooks work in unit test context" {
+                assert!(UNIT_SUITE_BEFORE.load(Ordering::SeqCst));
+                assert!(UNIT_SUITE_BEFORE_EACH.load(Ordering::SeqCst) >= 1);
+            }
+
+            it "suite before_each fires for each test" {
+                assert!(UNIT_SUITE_BEFORE_EACH.load(Ordering::SeqCst) >= 1);
+            }
+        }
+    }
+
+    spec! {
+        mod group_without_suite_in_unit {
+            it "works without suite opt-in" {
+                assert_eq!(2 + 2, 4);
+            }
+        }
+    }
 }
