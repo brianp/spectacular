@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2024"
 description = "An RSpec-inspired test framework for Rust with stackable before/after hooks"
 license = "MIT"
+repository = "https://github.com/brianp/spectacular"
+readme = "../../README.md"
+keywords = ["testing", "test-framework", "rspec", "hooks"]
+categories = ["development-tools::testing"]
 
 [dependencies]
-spectacular-macros = { path = "../spectacular-macros" }
+spectacular-macros = { version = "0.1.0", path = "../spectacular-macros" }
