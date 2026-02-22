@@ -15,16 +15,20 @@ Defines a test group using RSpec-style DSL.
 use spectacular::spec;
 
 spec! {
-    mod group_name {
+    describe "group name" {
         // hooks and tests go here
     }
 }
 ```
 
+You can also use `mod name` directly instead of `describe "string"`.
+
 **Keywords:**
 
 | Keyword | Usage | Description |
 |---------|-------|-------------|
+| `describe` | `describe "name" { }` | BDD-style group (string slugified to module name) |
+| `mod` | `mod name { }` | Group with explicit module name |
 | `it` | `it "desc" { body }` | Defines a test case |
 | `it` | `it "desc" \|params\| { body }` | Test with context params |
 | `before` | `before { body }` | Once-per-group setup (fire-and-forget) |

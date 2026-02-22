@@ -304,6 +304,20 @@ pub use spectacular_macros::suite;
 /// `before_each`, and `after_each` hooks. Add `suite;` to opt into
 /// suite-level hooks defined by [`suite!`].
 ///
+/// ## `describe` syntax
+///
+/// You can use `describe "string"` instead of `mod name` for a BDD-style feel:
+///
+/// ```ignore
+/// spec! {
+///     describe "user authentication" {
+///         it "rejects invalid passwords" { /* ... */ }
+///     }
+/// }
+/// ```
+///
+/// The string is slugified into a module name (`user_authentication`).
+///
 /// For async tests, add `tokio;` or `async_std;` to the module and prefix
 /// test cases or hooks with `async`: `async it "..." { ... }`,
 /// `async before_each { ... }`.
@@ -523,9 +537,7 @@ pub mod __internal {
     ///
     /// Wraps each `poll` call in `catch_unwind` so panics inside `.await`ed
     /// futures are caught without requiring the future itself to be `UnwindSafe`.
-    pub async fn catch_unwind_future<F: Future>(
-        f: F,
-    ) -> Result<F::Output, Box<dyn Any + Send>> {
+    pub async fn catch_unwind_future<F: Future>(f: F) -> Result<F::Output, Box<dyn Any + Send>> {
         let mut f = Box::pin(f);
         std::future::poll_fn(move |cx| {
             match catch_unwind(AssertUnwindSafe(|| f.as_mut().poll(cx))) {
@@ -545,9 +557,7 @@ pub mod __internal {
 /// # fn main() {}
 /// ```
 pub mod prelude {
-    pub use spectacular_macros::{
-        after, after_each, before, before_each, spec, suite, test_suite,
-    };
+    pub use spectacular_macros::{after, after_each, before, before_each, spec, suite, test_suite};
 }
 
 #[cfg(test)]

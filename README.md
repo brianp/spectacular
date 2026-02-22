@@ -39,7 +39,7 @@ spectacular = "0.1"
 use spectacular::spec;
 
 spec! {
-    mod arithmetic {
+    describe "arithmetic" {
         it "adds two numbers" {
             assert_eq!(2 + 2, 4);
         }
@@ -50,6 +50,8 @@ spec! {
     }
 }
 ```
+
+`describe "string"` slugifies the string into a module name (`"arithmetic"` → `mod arithmetic`). You can also use `mod name` directly if you prefer.
 
 ### Attribute style
 
@@ -83,7 +85,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 static READY: AtomicBool = AtomicBool::new(false);
 
 spec! {
-    mod with_hooks {
+    describe "with hooks" {
         use super::*;
 
         before { READY.store(true, Ordering::SeqCst); }
@@ -115,7 +117,7 @@ suite! {
 }
 
 spec! {
-    mod database_tests {
+    describe "database tests" {
         use super::*;
         suite;
 
@@ -143,7 +145,7 @@ Hooks can produce context values that flow naturally to tests and teardown hooks
 use spectacular::spec;
 
 spec! {
-    mod database_tests {
+    describe "database tests" {
         tokio;
 
         before -> PgPool {
@@ -230,7 +232,7 @@ Both `spec!` and `#[test_suite]` support async test cases and hooks. Specify a r
 use spectacular::spec;
 
 spec! {
-    mod my_async_tests {
+    describe "my async tests" {
         tokio;  // or async_std;
 
         async before_each { db_connect().await; }
@@ -275,6 +277,8 @@ With the feature enabled, `async it` / `async fn` test cases Just Work without e
 
 | Form | Description |
 |------|-------------|
+| `describe "name" { }` | BDD-style group (string slugified to module name) |
+| `mod name { }` | Group with explicit module name |
 | `before -> Type { }` | Run-once setup returning shared context |
 | `after \|name: &Type\| { }` | Run-once teardown receiving shared context |
 | `before_each \|name: &Type\| -> Type { }` | Per-test setup with shared context input, owned output |

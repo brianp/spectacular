@@ -21,6 +21,24 @@ spec! {
 }
 ```
 
+### `describe` syntax
+
+You can use `describe "string"` instead of `mod name` for a more BDD-style feel. The string is automatically slugified into a valid Rust module name:
+
+```rust
+use spectacular::spec;
+
+spec! {
+    describe "basic arithmetic operations" {
+        it "adds two numbers" {
+            assert_eq!(2 + 2, 4);
+        }
+    }
+}
+```
+
+This generates a module named `basic_arithmetic_operations` under the hood.
+
 Each `spec!` invocation wraps a module. Inside the module:
 
 - **`it "description" { body }`** -- defines a test case
@@ -31,15 +49,16 @@ Each `spec!` invocation wraps a module. Inside the module:
 - **`suite;`** -- opts into suite-level hooks
 - Any other valid Rust items (functions, constants, `use` statements)
 
-## Test Naming
+## Naming
 
-Test descriptions are slugified into valid Rust identifiers:
+Both `describe` strings and `it` descriptions are slugified into valid Rust identifiers:
 
-| Description | Function name |
+| Input | Generated name |
 |---|---|
-| `"adds two numbers"` | `adds_two_numbers` |
-| `"handles UTF-8 input"` | `handles_utf_8_input` |
-| `"returns Ok(()) on success"` | `returns_ok_on_success` |
+| `describe "user authentication"` | `mod user_authentication` |
+| `it "adds two numbers"` | `fn adds_two_numbers` |
+| `it "handles UTF-8 input"` | `fn handles_utf_8_input` |
+| `it "returns Ok(()) on success"` | `fn returns_ok_on_success` |
 
 ## Helper Functions
 

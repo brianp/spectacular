@@ -14,7 +14,7 @@ Create a test file and write a simple spec:
 use spectacular::spec;
 
 spec! {
-    mod arithmetic {
+    describe "arithmetic" {
         it "adds two numbers" {
             assert_eq!(2 + 2, 4);
         }
@@ -25,6 +25,8 @@ spec! {
     }
 }
 ```
+
+`describe "string"` slugifies the string into a module name. You can also use `mod name` directly if you prefer.
 
 Run it:
 
@@ -50,7 +52,7 @@ Add a `before_each` hook to run setup before every test:
 use spectacular::spec;
 
 spec! {
-    mod with_setup {
+    describe "with setup" {
         use std::sync::atomic::{AtomicUsize, Ordering};
 
         static COUNTER: AtomicUsize = AtomicUsize::new(0);

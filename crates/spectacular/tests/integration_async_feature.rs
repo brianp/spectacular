@@ -2,7 +2,7 @@
 //!
 //! Run with: `cargo test -p spectacular --features tokio`
 
-#![cfg(feature = "tokio")]
+#![cfg(all(feature = "tokio", not(feature = "async-std")))]
 
 use spectacular::prelude::*;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -90,7 +90,7 @@ spec! {
         }
 
         it "another sync test" {
-            assert!(true);
+            assert_eq!(1 + 1, 2);
         }
     }
 }

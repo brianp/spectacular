@@ -582,7 +582,7 @@ mod attr_no_test_params_ctx {
 
     #[test]
     pub fn test_no_params() {
-        assert!(true);
+        assert_eq!(1 + 1, 2);
     }
 }
 
@@ -756,3 +756,53 @@ mod attr_async_full_ctx {
 
 // --- Backwards compat: before without return type still works (already tested above) ---
 // --- Backwards compat: before_each without return type still works (already tested above) ---
+
+// ===== describe "string" syntax =====
+
+spec! {
+    describe "basic arithmetic operations" {
+        it "adds two numbers" {
+            assert_eq!(2 + 2, 4);
+        }
+
+        it "multiplies two numbers" {
+            assert_eq!(3 * 7, 21);
+        }
+    }
+}
+
+static DESCRIBE_BEFORE: AtomicBool = AtomicBool::new(false);
+static DESCRIBE_BEFORE_EACH_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+spec! {
+    describe "describe blocks with hooks" {
+        use super::*;
+
+        before {
+            DESCRIBE_BEFORE.store(true, Ordering::SeqCst);
+        }
+
+        before_each {
+            DESCRIBE_BEFORE_EACH_COUNT.fetch_add(1, Ordering::SeqCst);
+        }
+
+        it "sees before state" {
+            assert!(DESCRIBE_BEFORE.load(Ordering::SeqCst));
+            assert!(DESCRIBE_BEFORE_EACH_COUNT.load(Ordering::SeqCst) >= 1);
+        }
+
+        it "before_each fires per test" {
+            assert!(DESCRIBE_BEFORE_EACH_COUNT.load(Ordering::SeqCst) >= 1);
+        }
+    }
+}
+
+spec! {
+    describe "describe with context injection" {
+        before -> i32 { 100 }
+
+        it "receives shared ref" |val: &i32| {
+            assert_eq!(*val, 100);
+        }
+    }
+}

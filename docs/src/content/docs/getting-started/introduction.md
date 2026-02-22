@@ -30,13 +30,15 @@ A concise, expressive syntax inspired by RSpec:
 use spectacular::spec;
 
 spec! {
-    mod arithmetic {
+    describe "arithmetic" {
         it "adds two numbers" {
             assert_eq!(2 + 2, 4);
         }
     }
 }
 ```
+
+`describe "string"` slugifies the string into a module name. You can also use `mod name` directly.
 
 ### Attribute style
 

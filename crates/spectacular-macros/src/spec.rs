@@ -16,9 +16,14 @@ pub(crate) struct PipeParam {
 pub(crate) enum SpecItem {
     Suite,
     Runtime(Runtime),
-    Before(proc_macro2::TokenStream, Option<syn::Type>),           // (body, return_type)
-    After(proc_macro2::TokenStream, Vec<PipeParam>),                // (body, params)
-    BeforeEach(proc_macro2::TokenStream, bool, Option<syn::Type>, Vec<PipeParam>),
+    Before(proc_macro2::TokenStream, Option<syn::Type>), // (body, return_type)
+    After(proc_macro2::TokenStream, Vec<PipeParam>),     // (body, params)
+    BeforeEach(
+        proc_macro2::TokenStream,
+        bool,
+        Option<syn::Type>,
+        Vec<PipeParam>,
+    ),
     //         body                     async  return_type          input_params
     AfterEach(proc_macro2::TokenStream, bool, Vec<PipeParam>),
     //        body                      async  params
@@ -69,8 +74,21 @@ fn parse_return_type(input: ParseStream) -> syn::Result<Option<syn::Type>> {
 impl Parse for SpecModule {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let vis: syn::Visibility = input.parse()?;
-        input.parse::<Token![mod]>()?;
-        let ident: Ident = input.parse()?;
+
+        // Accept either `mod ident` or `describe "string literal"`
+        let ident: Ident = if input.peek(Token![mod]) {
+            input.parse::<Token![mod]>()?;
+            input.parse()?
+        } else {
+            let kw: Ident = input.parse()?;
+            if kw != "describe" {
+                return Err(syn::Error::new(kw.span(), "expected `mod` or `describe`"));
+            }
+            let desc: LitStr = input.parse()?;
+            let slug = slugify(&desc.value());
+            Ident::new(&slug, desc.span())
+        };
+
         let content;
         braced!(content in input);
         let mut items = Vec::new();
@@ -233,8 +251,13 @@ pub(crate) fn expand(input: proc_macro2::TokenStream) -> syn::Result<proc_macro2
     let mut after_each_body: Option<proc_macro2::TokenStream> = None;
     let mut after_each_is_async = false;
     let mut after_each_params: Vec<PipeParam> = Vec::new();
-    let mut tests: Vec<(String, Ident, proc_macro2::TokenStream, bool, Vec<PipeParam>)> =
-        Vec::new();
+    let mut tests: Vec<(
+        String,
+        Ident,
+        proc_macro2::TokenStream,
+        bool,
+        Vec<PipeParam>,
+    )> = Vec::new();
     let mut other_items: Vec<proc_macro2::TokenStream> = Vec::new();
 
     for item in parsed.items {
