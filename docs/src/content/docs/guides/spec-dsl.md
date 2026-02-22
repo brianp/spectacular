@@ -126,6 +126,96 @@ spec! {
 }
 ```
 
+## Context Injection
+
+Hooks can return context values that flow to tests and teardown hooks.
+
+### `before -> Type`
+
+When `before` returns a value, it's stored in an `OnceLock<T>` and available as `&T`:
+
+```rust
+use spectacular::spec;
+
+spec! {
+    mod with_context {
+        before -> String {
+            "shared".to_string()
+        }
+
+        it "receives shared ref" |val: &String| {
+            assert_eq!(val, "shared");
+        }
+    }
+}
+```
+
+### `before_each` with params and return type
+
+`before_each` can receive `before`'s `&T` and return an owned per-test value:
+
+```rust
+use spectacular::spec;
+
+spec! {
+    mod full_context {
+        before -> i32 { 42 }
+
+        before_each |n: &i32| -> String {
+            format!("value-{}", n)
+        }
+
+        after_each |n: &i32, s: String| {
+            // n from before (&ref), s from before_each (owned)
+        }
+
+        it "gets both" |n: &i32, s: String| {
+            assert_eq!(*n, 42);
+            assert_eq!(s, "value-42");
+        }
+    }
+}
+```
+
+### Pipe params on `after` and `after_each`
+
+```rust
+use spectacular::spec;
+
+spec! {
+    mod cleanup_example {
+        before -> String { "resource".to_string() }
+
+        after |r: &String| {
+            // runs once, receives &String from before
+        }
+
+        before_each -> Vec<i32> { vec![1, 2, 3] }
+
+        after_each |r: &String, data: Vec<i32>| {
+            // r from before (&ref), data from before_each (owned)
+        }
+
+        it "test" |r: &String, data: Vec<i32>| {
+            assert_eq!(r, "resource");
+            assert_eq!(data, vec![1, 2, 3]);
+        }
+    }
+}
+```
+
+### Context syntax summary
+
+| Form | Description |
+|------|-------------|
+| `before -> Type { }` | Run-once setup returning shared context |
+| `after \|name: &Type\| { }` | Run-once teardown receiving shared context |
+| `before_each \|name: &Type\| -> Type { }` | Per-test setup with shared input, owned output |
+| `after_each \|name: &Type, name: Type\| { }` | Per-test teardown with shared + owned context |
+| `it "desc" \|name: &Type, name: Type\| { }` | Test with shared + owned context |
+
+Hooks without return types or params continue to work as fire-and-forget (unchanged).
+
 ## Visibility
 
 The generated module inherits the visibility you declare:

@@ -16,7 +16,7 @@ Rust's built-in `#[test]` attribute is great for simple cases, but as test suite
 - **Guaranteed cleanup** that runs even when tests panic
 - **Global initialization** shared across multiple test groups
 
-Spectacular solves all of these with a clean, layered hook system.
+Spectacular solves all of these with a clean, layered hook system and **context injection** -- hooks can return values that flow naturally to tests and teardown hooks, no `thread_local!` needed.
 
 ## Two Syntax Styles
 

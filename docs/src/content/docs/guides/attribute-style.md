@@ -134,3 +134,77 @@ mod database_tests {
 ```
 
 See [Suite Hooks](/spectacular/guides/suite-hooks/) for the full 3-layer system.
+
+## Context Injection
+
+Hook functions can return context values and receive context via parameters. The macro reads function signatures to determine context flow.
+
+### `#[before]` returning context
+
+When the `#[before]` function has a return type, the value is stored in an `OnceLock<T>` and available as `&T` to all other hooks and tests:
+
+```rust
+use spectacular::{test_suite, before};
+
+#[test_suite]
+mod with_shared_context {
+    #[before]
+    fn init() -> String {
+        "shared".to_string()
+    }
+
+    #[test]
+    fn receives_ref(val: &String) {
+        assert_eq!(val, "shared");
+    }
+}
+```
+
+### `#[before_each]` returning context
+
+When `#[before_each]` has a return type, each test gets an owned value. Reference params on `before_each` are bound from `before`'s context:
+
+```rust
+use spectacular::{test_suite, before, before_each, after_each};
+
+#[test_suite]
+mod full_context {
+    #[before]
+    fn init() -> i32 { 42 }
+
+    #[before_each]
+    fn setup(shared: &i32) -> String {
+        format!("ctx-{}", shared)
+    }
+
+    #[after_each]
+    fn teardown(shared: &i32, owned: String) {
+        // shared is &i32 from before, owned is String from before_each
+    }
+
+    #[test]
+    fn gets_both(shared: &i32, owned: String) {
+        assert_eq!(*shared, 42);
+        assert_eq!(owned, "ctx-42");
+    }
+}
+```
+
+### How params are distinguished
+
+The macro distinguishes context sources by type:
+
+- **Reference params (`&T`)** → bound from `#[before]` context (shared, read-only)
+- **Owned params (`T`)** → bound from `#[before_each]` context (per-test)
+
+### Context reference
+
+| Pattern | Description |
+|---------|-------------|
+| `fn init() -> T` | `#[before]` returning shared context |
+| `fn cleanup(x: &T)` | `#[after]` receiving shared context |
+| `fn setup(x: &T) -> U` | `#[before_each]` with shared input, owned output |
+| `fn teardown(x: &T, y: U)` | `#[after_each]` with shared + owned |
+| `fn test_name(x: &T, y: U)` | `#[test]` with shared + owned |
+
+Hooks without return types or params continue to work as fire-and-forget (unchanged).

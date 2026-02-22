@@ -76,3 +76,50 @@ if let Err(e) = result {
 ```
 
 This ensures cleanup always runs while preserving the test failure.
+
+## Context Flow
+
+When hooks return context values, the execution order includes context passing:
+
+```
+group::before          → returns T, stored in OnceLock<T>
+  group::before_each   → receives &T, returns U
+    TEST BODY          → receives &T (shared) + U (owned, borrowed)
+  group::after_each    → receives &T (shared) + U (owned, consumed)
+group::after           → receives &T (shared)
+```
+
+### Ownership rules
+
+- **`before` context**: `&T` via `OnceLock` -- shared, read-only, available everywhere
+- **`before_each` context**: owned `T` -- test borrows through `catch_unwind`, `after_each` consumes
+- Test body uses `async { }` (not `async move`), so borrows release after await, leaving owned values for `after_each`
+- If a test moves a value that `after_each` also needs, Rust emits a compile error ("used after move") -- the user clones
+
+### Generated code (simplified)
+
+```rust
+// 1. before (run-once) — OnceLock
+let shared = __SPEC_BEFORE_CTX.get_or_init(init);       // &T
+
+// 2. before_each — receives &T, returns owned U
+let ctx = setup(shared).await;
+
+// 3. test body — borrows shared and ctx
+let result = catch_unwind_future(async {
+    /* test body using shared and ctx */
+}).await;
+
+// 4. after_each — receives &T + owned U
+teardown(shared, ctx).await;
+
+// 5. after (countdown) — receives &T
+if counter.fetch_sub(1, SeqCst) == 1 {
+    cleanup(shared);
+}
+
+// 6. re-raise if test panicked
+if let Err(e) = result {
+    std::panic::resume_unwind(e);
+}
+```

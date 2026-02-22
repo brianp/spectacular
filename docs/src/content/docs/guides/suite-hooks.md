@@ -179,3 +179,73 @@ spec! {
     }
 }
 ```
+
+### With Context Injection
+
+The database example becomes much cleaner with context injection. Instead of `thread_local!` + `RefCell`, hooks return values directly:
+
+**spec! style:**
+
+```rust
+use spectacular::spec;
+
+spec! {
+    mod database_tests {
+        tokio;
+
+        before -> PgPool {
+            PgPool::connect("postgres://localhost/test").unwrap()
+        }
+
+        after |pool: &PgPool| {
+            pool.close();
+        }
+
+        async before_each |pool: &PgPool| -> Transaction {
+            pool.begin().await.unwrap()
+        }
+
+        async after_each |_pool: &PgPool, tx: Transaction| {
+            tx.rollback().await.unwrap();
+        }
+
+        async it "creates a user" |pool: &PgPool, tx: Transaction| {
+            // pool is &PgPool (shared), tx is Transaction (owned per test)
+        }
+    }
+}
+```
+
+**Attribute style:**
+
+```rust
+use spectacular::{test_suite, before, after, before_each, after_each};
+
+#[test_suite(tokio)]
+mod database_tests {
+    #[before]
+    fn init() -> PgPool {
+        PgPool::connect("postgres://localhost/test").unwrap()
+    }
+
+    #[after]
+    fn cleanup(pool: &PgPool) {
+        pool.close();
+    }
+
+    #[before_each]
+    async fn begin_tx(pool: &PgPool) -> Transaction {
+        pool.begin().await.unwrap()
+    }
+
+    #[after_each]
+    async fn rollback(pool: &PgPool, tx: Transaction) {
+        tx.rollback().await.unwrap();
+    }
+
+    #[test]
+    async fn creates_a_user(pool: &PgPool, tx: Transaction) {
+        // pool is &PgPool (shared), tx is Transaction (owned per test)
+    }
+}
+```
