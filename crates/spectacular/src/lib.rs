@@ -96,23 +96,89 @@
 //!
 //! # Attribute Style
 //!
-//! For those who prefer standard Rust attribute syntax:
+//! For those who prefer standard Rust attribute syntax — just use `#[test]`:
 //!
 //! ```
-//! use spectacular::{test_suite, test_case, before};
+//! use spectacular::{test_suite, before};
 //!
 //! #[test_suite]
 //! mod my_tests {
 //!     #[before]
 //!     fn setup() { }
 //!
-//!     #[test_case]
+//!     #[test]
 //!     fn it_works() {
 //!         assert_eq!(1 + 1, 2);
 //!     }
 //! }
 //! # fn main() {}
 //! ```
+//!
+//! # Async Tests
+//!
+//! Both `spec!` and `#[test_suite]` support async test cases and hooks.
+//! Specify a runtime (`tokio` or `async_std`) to enable async:
+//!
+//! ```
+//! # // doc-test can't depend on tokio, so just show the syntax
+//! # fn main() {}
+//! ```
+//!
+//! **`spec!` style:**
+//! ```ignore
+//! use spectacular::spec;
+//!
+//! spec! {
+//!     mod my_async_tests {
+//!         tokio;  // or async_std;
+//!
+//!         async before_each { db_connect().await; }
+//!
+//!         async it "fetches data" {
+//!             let result = fetch().await;
+//!             assert!(result.is_ok());
+//!         }
+//!
+//!         it "sync test works too" {
+//!             assert_eq!(1 + 1, 2);
+//!         }
+//!     }
+//! }
+//! ```
+//!
+//! **Attribute style:**
+//! ```ignore
+//! use spectacular::{test_suite, before_each};
+//!
+//! #[test_suite(tokio)]
+//! mod my_async_tests {
+//!     #[before_each]
+//!     async fn setup() { db_connect().await; }
+//!
+//!     #[test]
+//!     async fn it_works() {
+//!         let result = fetch().await;
+//!         assert!(result.is_ok());
+//!     }
+//! }
+//! ```
+//!
+//! Async `after_each` hooks are panic-safe — they run even if the test body
+//! panics, using an async-compatible `catch_unwind` wrapper.
+//!
+//! **Feature-based default:** If you enable the `tokio` or `async-std` feature
+//! on `spectacular`, async tests auto-detect the runtime so you can omit the
+//! explicit `tokio;` / `#[test_suite(tokio)]` argument:
+//!
+//! ```toml
+//! [dev-dependencies]
+//! spectacular = { version = "0.1", features = ["tokio"] }
+//! ```
+//!
+//! With the feature enabled, `async it` / `async fn` test cases Just Work.
+//! Explicit runtime arguments always take precedence over the feature default.
+//! If both features are enabled simultaneously, you must specify explicitly
+//! (the macro will emit a compile error).
 
 /// Defines suite-level hooks that run across all opted-in test groups.
 ///
@@ -154,6 +220,10 @@ pub use spectacular_macros::suite;
 /// `before_each`, and `after_each` hooks. Add `suite;` to opt into
 /// suite-level hooks defined by [`suite!`].
 ///
+/// For async tests, add `tokio;` or `async_std;` to the module and prefix
+/// test cases or hooks with `async`: `async it "..." { ... }`,
+/// `async before_each { ... }`.
+///
 /// Helper functions, constants, and `use` statements can appear alongside
 /// hooks and test cases.
 ///
@@ -181,22 +251,26 @@ pub use spectacular_macros::spec;
 
 /// Marks a module as a test suite using standard Rust attribute syntax.
 ///
-/// Functions annotated with [`#[test_case]`](macro@test_case) become `#[test]`
-/// functions. Hook functions are marked with [`#[before]`](macro@before),
+/// Test functions are marked with the standard `#[test]` attribute. Hook
+/// functions are marked with [`#[before]`](macro@before),
 /// [`#[after]`](macro@after), [`#[before_each]`](macro@before_each), or
 /// [`#[after_each]`](macro@after_each).
 ///
 /// Pass `suite` to opt into suite-level hooks: `#[test_suite(suite)]`.
 ///
+/// For async support, pass `tokio` or `async_std`: `#[test_suite(tokio)]`.
+/// Combine with suite: `#[test_suite(suite, tokio)]`. Async test and hook
+/// functions are detected automatically from `async fn` signatures.
+///
 /// ```
-/// use spectacular::{test_suite, test_case, before_each};
+/// use spectacular::{test_suite, before_each};
 ///
 /// #[test_suite]
 /// mod my_tests {
 ///     #[before_each]
 ///     fn setup() { }
 ///
-///     #[test_case]
+///     #[test]
 ///     fn it_works() {
 ///         assert_eq!(2 + 2, 4);
 ///     }
@@ -204,25 +278,6 @@ pub use spectacular_macros::spec;
 /// # fn main() {}
 /// ```
 pub use spectacular_macros::test_suite;
-
-/// Marks a function as a test case inside a [`#[test_suite]`](macro@test_suite) module.
-///
-/// The function is transformed into a `#[test]` function with any configured
-/// hooks applied around the body.
-///
-/// ```
-/// use spectacular::{test_suite, test_case};
-///
-/// #[test_suite]
-/// mod example {
-///     #[test_case]
-///     fn two_plus_two() {
-///         assert_eq!(2 + 2, 4);
-///     }
-/// }
-/// # fn main() {}
-/// ```
-pub use spectacular_macros::test_case;
 
 /// Marks a function as a once-per-group setup hook inside a
 /// [`#[test_suite]`](macro@test_suite) module.
@@ -233,14 +288,14 @@ pub use spectacular_macros::test_case;
 /// In [`spec!`] blocks, use `before { ... }` instead.
 ///
 /// ```
-/// use spectacular::{test_suite, test_case, before};
+/// use spectacular::{test_suite, before};
 ///
 /// #[test_suite]
 /// mod example {
 ///     #[before]
 ///     fn setup() { }
 ///
-///     #[test_case]
+///     #[test]
 ///     fn my_test() {
 ///         assert!(true);
 ///     }
@@ -258,14 +313,14 @@ pub use spectacular_macros::before;
 /// In [`spec!`] blocks, use `after { ... }` instead.
 ///
 /// ```
-/// use spectacular::{test_suite, test_case, after};
+/// use spectacular::{test_suite, after};
 ///
 /// #[test_suite]
 /// mod example {
 ///     #[after]
 ///     fn teardown() { }
 ///
-///     #[test_case]
+///     #[test]
 ///     fn my_test() {
 ///         assert!(true);
 ///     }
@@ -283,14 +338,14 @@ pub use spectacular_macros::after;
 /// In [`spec!`] blocks, use `before_each { ... }` instead.
 ///
 /// ```
-/// use spectacular::{test_suite, test_case, before_each};
+/// use spectacular::{test_suite, before_each};
 ///
 /// #[test_suite]
 /// mod example {
 ///     #[before_each]
 ///     fn setup() { }
 ///
-///     #[test_case]
+///     #[test]
 ///     fn my_test() {
 ///         assert!(true);
 ///     }
@@ -309,14 +364,14 @@ pub use spectacular_macros::before_each;
 /// In [`spec!`] blocks, use `after_each { ... }` instead.
 ///
 /// ```
-/// use spectacular::{test_suite, test_case, after_each};
+/// use spectacular::{test_suite, after_each};
 ///
 /// #[test_suite]
 /// mod example {
 ///     #[after_each]
 ///     fn cleanup() { }
 ///
-///     #[test_case]
+///     #[test]
 ///     fn my_test() {
 ///         assert!(true);
 ///     }
@@ -324,6 +379,33 @@ pub use spectacular_macros::before_each;
 /// # fn main() {}
 /// ```
 pub use spectacular_macros::after_each;
+
+/// Internal helpers used by generated code. Not part of the public API.
+#[doc(hidden)]
+pub mod __internal {
+    use std::any::Any;
+    use std::future::Future;
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+    use std::task::Poll;
+
+    /// Like `std::panic::catch_unwind` but for async blocks.
+    ///
+    /// Wraps each `poll` call in `catch_unwind` so panics inside `.await`ed
+    /// futures are caught without requiring the future itself to be `UnwindSafe`.
+    pub async fn catch_unwind_future<F: Future>(
+        f: F,
+    ) -> Result<F::Output, Box<dyn Any + Send>> {
+        let mut f = Box::pin(f);
+        std::future::poll_fn(move |cx| {
+            match catch_unwind(AssertUnwindSafe(|| f.as_mut().poll(cx))) {
+                Ok(Poll::Ready(v)) => Poll::Ready(Ok(v)),
+                Ok(Poll::Pending) => Poll::Pending,
+                Err(e) => Poll::Ready(Err(e)),
+            }
+        })
+        .await
+    }
+}
 
 /// Convenience re-export of all spectacular macros.
 ///
@@ -333,7 +415,7 @@ pub use spectacular_macros::after_each;
 /// ```
 pub mod prelude {
     pub use spectacular_macros::{
-        after, after_each, before, before_each, spec, suite, test_case, test_suite,
+        after, after_each, before, before_each, spec, suite, test_suite,
     };
 }
 

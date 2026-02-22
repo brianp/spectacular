@@ -62,13 +62,13 @@ spec! {
 Pass `suite` to the `#[test_suite]` attribute:
 
 ```rust
-use spectacular::{test_suite, test_case};
+use spectacular::test_suite;
 
 #[test_suite(suite)]
 mod database_tests {
     use super::*;
 
-    #[test_case]
+    #[test]
     fn has_database_access() {
         assert!(DB_READY.load(Ordering::SeqCst));
     }

@@ -10,23 +10,23 @@ For developers who prefer idiomatic Rust syntax, Spectacular provides an attribu
 ## Basic Structure
 
 ```rust
-use spectacular::{test_suite, test_case};
+use spectacular::test_suite;
 
 #[test_suite]
 mod my_tests {
-    #[test_case]
+    #[test]
     fn it_works() {
         assert_eq!(2 + 2, 4);
     }
 
-    #[test_case]
+    #[test]
     fn it_also_works() {
         assert!(true);
     }
 }
 ```
 
-`#[test_suite]` marks the module. `#[test_case]` marks individual test functions. Each `#[test_case]` function becomes a standard `#[test]` function with hooks applied.
+`#[test_suite]` marks the module. Tests use the standard `#[test]` attribute. Each `#[test]` function gets hooks applied automatically.
 
 ## Attributes Reference
 
@@ -34,7 +34,7 @@ mod my_tests {
 |------------------------|--------------------------------------------|
 | `#[test_suite]`        | Marks a module as a test group             |
 | `#[test_suite(suite)]` | Same, with suite hook opt-in               |
-| `#[test_case]`         | Marks a function as a test                 |
+| `#[test]`              | Marks a function as a test                 |
 | `#[before]`            | Once-per-group setup (max one per module)  |
 | `#[after]`             | Once-per-group teardown (max one per module) |
 | `#[before_each]`       | Per-test setup (max one per module)        |
@@ -43,7 +43,7 @@ mod my_tests {
 ## Adding Hooks
 
 ```rust
-use spectacular::{test_suite, test_case, before, after, before_each, after_each};
+use spectacular::{test_suite, before, after, before_each, after_each};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 static INITIALIZED: AtomicBool = AtomicBool::new(false);
@@ -73,12 +73,12 @@ mod with_hooks {
         // runs once after the last test
     }
 
-    #[test_case]
+    #[test]
     fn sees_initialization() {
         assert!(INITIALIZED.load(Ordering::SeqCst));
     }
 
-    #[test_case]
+    #[test]
     fn setup_runs_per_test() {
         assert!(SETUP_COUNT.load(Ordering::SeqCst) >= 1);
     }
@@ -90,13 +90,13 @@ mod with_hooks {
 Non-annotated functions are passed through as-is:
 
 ```rust
-use spectacular::{test_suite, test_case};
+use spectacular::test_suite;
 
 #[test_suite]
 mod with_helpers {
     fn double(n: i32) -> i32 { n * 2 }
 
-    #[test_case]
+    #[test]
     fn uses_helper() {
         assert_eq!(double(21), 42);
     }
@@ -108,7 +108,7 @@ mod with_helpers {
 Pass `suite` to opt into suite-level hooks:
 
 ```rust
-use spectacular::{suite, test_suite, test_case, before};
+use spectacular::{suite, test_suite, before};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 static DB_READY: AtomicBool = AtomicBool::new(false);
@@ -126,7 +126,7 @@ mod database_tests {
         // runs after suite::before, once per group
     }
 
-    #[test_case]
+    #[test]
     fn has_database() {
         assert!(DB_READY.load(Ordering::SeqCst));
     }

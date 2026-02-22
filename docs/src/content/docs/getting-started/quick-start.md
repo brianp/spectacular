@@ -75,7 +75,7 @@ spec! {
 The same test using attribute style:
 
 ```rust
-use spectacular::{test_suite, test_case, before_each};
+use spectacular::{test_suite, before_each};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 static COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -89,7 +89,7 @@ mod with_setup {
         COUNTER.fetch_add(1, Ordering::SeqCst);
     }
 
-    #[test_case]
+    #[test]
     fn counter_is_at_least_1() {
         assert!(COUNTER.load(Ordering::SeqCst) >= 1);
     }

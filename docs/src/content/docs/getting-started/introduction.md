@@ -43,11 +43,11 @@ spec! {
 Standard Rust attributes for those who prefer a more idiomatic approach:
 
 ```rust
-use spectacular::{test_suite, test_case};
+use spectacular::test_suite;
 
 #[test_suite]
 mod arithmetic {
-    #[test_case]
+    #[test]
     fn adds_two_numbers() {
         assert_eq!(2 + 2, 4);
     }

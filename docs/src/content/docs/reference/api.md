@@ -60,15 +60,6 @@ Marks a module as a test group.
 mod my_tests { }
 ```
 
-### `#[test_case]`
-
-Marks a function as a test case. Must be inside a `#[test_suite]` module.
-
-```rust
-#[test_case]
-fn my_test() { }
-```
-
 ### `#[before]`
 
 Marks a function as a once-per-group setup hook. Max one per module.
@@ -113,7 +104,7 @@ Import everything at once:
 use spectacular::prelude::*;
 ```
 
-This re-exports: `spec`, `suite`, `test_suite`, `test_case`, `before`, `after`, `before_each`, `after_each`.
+This re-exports: `spec`, `suite`, `test_suite`, `before`, `after`, `before_each`, `after_each`.
 
 ## Full API Documentation
 

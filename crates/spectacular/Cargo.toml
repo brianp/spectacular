@@ -9,5 +9,12 @@ readme = "../../README.md"
 keywords = ["testing", "test-framework", "rspec", "hooks"]
 categories = ["development-tools::testing"]
 
+[features]
+tokio = ["spectacular-macros/tokio"]
+async-std = ["spectacular-macros/async-std"]
+
 [dependencies]
 spectacular-macros = { version = "0.1.0", path = "../spectacular-macros" }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

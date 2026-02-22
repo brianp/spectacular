@@ -12,6 +12,10 @@ categories = ["development-tools::testing"]
 [lib]
 proc-macro = true
 
+[features]
+tokio = []
+async-std = []
+
 [dependencies]
 proc-macro2 = "1"
 quote = "1"

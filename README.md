@@ -54,16 +54,16 @@ spec! {
 ### Attribute style
 
 ```rust
-use spectacular::{test_suite, test_case};
+use spectacular::test_suite;
 
 #[test_suite]
 mod arithmetic {
-    #[test_case]
+    #[test]
     fn adds_two_numbers() {
         assert_eq!(2 + 2, 4);
     }
 
-    #[test_case]
+    #[test]
     fn multiplies_two_numbers() {
         assert_eq!(3 * 7, 21);
     }
@@ -151,7 +151,7 @@ After-hooks are protected by `catch_unwind`, so cleanup runs even if a test pani
 |---------------------|------------------------------------------------|
 | `#[test_suite]`     | Marks a module as a test group                 |
 | `#[test_suite(suite)]` | Same, with suite hook opt-in                |
-| `#[test_case]`      | Marks a function as a test                     |
+| `#[test]`           | Marks a function as a test                     |
 | `#[before]`         | Once-per-group setup (max one per module)      |
 | `#[after]`          | Once-per-group teardown (max one per module)   |
 | `#[before_each]`    | Per-test setup (max one per module)            |

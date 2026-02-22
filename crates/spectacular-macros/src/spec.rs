@@ -4,15 +4,16 @@ use quote::{format_ident, quote};
 use syn::parse::{Parse, ParseStream};
 use syn::{Ident, LitStr, Token, braced};
 
-use crate::{slugify, wrap_test_body};
+use crate::{Runtime, default_runtime, slugify, wrap_async_test_body, wrap_test_body};
 
 pub(crate) enum SpecItem {
     Suite,
+    Runtime(Runtime),
     Before(proc_macro2::TokenStream),
     After(proc_macro2::TokenStream),
-    BeforeEach(proc_macro2::TokenStream),
-    AfterEach(proc_macro2::TokenStream),
-    It(String, proc_macro2::TokenStream),
+    BeforeEach(proc_macro2::TokenStream, bool),  // (body, is_async)
+    AfterEach(proc_macro2::TokenStream, bool),   // (body, is_async)
+    It(String, proc_macro2::TokenStream, bool),  // (desc, body, is_async)
     Other(proc_macro2::TokenStream),
 }
 
@@ -32,6 +33,50 @@ impl Parse for SpecModule {
         let mut items = Vec::new();
 
         while !content.is_empty() {
+            // Check for `async` keyword first
+            if content.peek(Token![async]) {
+                let fork = content.fork();
+                let _: Token![async] = fork.parse()?;
+
+                if fork.peek(Ident) {
+                    let kw: Ident = fork.parse()?;
+                    match kw.to_string().as_str() {
+                        "it" => {
+                            let _: Token![async] = content.parse()?;
+                            let _: Ident = content.parse()?;
+                            let desc: LitStr = content.parse()?;
+                            let body;
+                            braced!(body in content);
+                            items.push(SpecItem::It(desc.value(), body.parse()?, true));
+                            continue;
+                        }
+                        "before_each" => {
+                            let _: Token![async] = content.parse()?;
+                            let _: Ident = content.parse()?;
+                            let body;
+                            braced!(body in content);
+                            items.push(SpecItem::BeforeEach(body.parse()?, true));
+                            continue;
+                        }
+                        "after_each" => {
+                            let _: Token![async] = content.parse()?;
+                            let _: Ident = content.parse()?;
+                            let body;
+                            braced!(body in content);
+                            items.push(SpecItem::AfterEach(body.parse()?, true));
+                            continue;
+                        }
+                        _ => {
+                            // Not a known async keyword, fall through to parse as item
+                        }
+                    }
+                }
+                // Fall through: parse as regular item (e.g. `async fn helper()`)
+                let item: syn::Item = content.parse()?;
+                items.push(SpecItem::Other(quote! { #item }));
+                continue;
+            }
+
             if content.peek(Ident) {
                 let fork = content.fork();
                 let kw: Ident = fork.parse()?;
@@ -42,26 +87,38 @@ impl Parse for SpecModule {
                         items.push(SpecItem::Suite);
                         continue;
                     }
+                    "tokio" => {
+                        let _: Ident = content.parse()?;
+                        content.parse::<Token![;]>()?;
+                        items.push(SpecItem::Runtime(Runtime::Tokio));
+                        continue;
+                    }
+                    "async_std" => {
+                        let _: Ident = content.parse()?;
+                        content.parse::<Token![;]>()?;
+                        items.push(SpecItem::Runtime(Runtime::AsyncStd));
+                        continue;
+                    }
                     "it" => {
                         let _: Ident = content.parse()?;
                         let desc: LitStr = content.parse()?;
                         let body;
                         braced!(body in content);
-                        items.push(SpecItem::It(desc.value(), body.parse()?));
+                        items.push(SpecItem::It(desc.value(), body.parse()?, false));
                         continue;
                     }
                     "before_each" => {
                         let _: Ident = content.parse()?;
                         let body;
                         braced!(body in content);
-                        items.push(SpecItem::BeforeEach(body.parse()?));
+                        items.push(SpecItem::BeforeEach(body.parse()?, false));
                         continue;
                     }
                     "after_each" => {
                         let _: Ident = content.parse()?;
                         let body;
                         braced!(body in content);
-                        items.push(SpecItem::AfterEach(body.parse()?));
+                        items.push(SpecItem::AfterEach(body.parse()?, false));
                         continue;
                     }
                     "before" => {
@@ -111,16 +168,28 @@ pub(crate) fn expand(input: proc_macro2::TokenStream) -> syn::Result<proc_macro2
         .iter()
         .any(|item| matches!(item, SpecItem::Suite));
 
+    let mut runtime: Option<Runtime> = None;
     let mut before_body: Option<proc_macro2::TokenStream> = None;
     let mut after_body: Option<proc_macro2::TokenStream> = None;
     let mut before_each_body: Option<proc_macro2::TokenStream> = None;
+    let mut before_each_is_async = false;
     let mut after_each_body: Option<proc_macro2::TokenStream> = None;
-    let mut tests: Vec<(String, Ident, proc_macro2::TokenStream)> = Vec::new();
+    let mut after_each_is_async = false;
+    let mut tests: Vec<(String, Ident, proc_macro2::TokenStream, bool)> = Vec::new();
     let mut other_items: Vec<proc_macro2::TokenStream> = Vec::new();
 
     for item in parsed.items {
         match item {
             SpecItem::Suite => {}
+            SpecItem::Runtime(rt) => {
+                if runtime.is_some() {
+                    return Err(syn::Error::new(
+                        proc_macro2::Span::call_site(),
+                        "duplicate runtime specifier",
+                    ));
+                }
+                runtime = Some(rt);
+            }
             SpecItem::Before(body) => {
                 if before_body.is_some() {
                     return Err(syn::Error::new(
@@ -139,7 +208,7 @@ pub(crate) fn expand(input: proc_macro2::TokenStream) -> syn::Result<proc_macro2
                 }
                 after_body = Some(body);
             }
-            SpecItem::BeforeEach(body) => {
+            SpecItem::BeforeEach(body, is_async) => {
                 if before_each_body.is_some() {
                     return Err(syn::Error::new(
                         proc_macro2::Span::call_site(),
@@ -147,8 +216,9 @@ pub(crate) fn expand(input: proc_macro2::TokenStream) -> syn::Result<proc_macro2
                     ));
                 }
                 before_each_body = Some(body);
+                before_each_is_async = is_async;
             }
-            SpecItem::AfterEach(body) => {
+            SpecItem::AfterEach(body, is_async) => {
                 if after_each_body.is_some() {
                     return Err(syn::Error::new(
                         proc_macro2::Span::call_site(),
@@ -156,15 +226,35 @@ pub(crate) fn expand(input: proc_macro2::TokenStream) -> syn::Result<proc_macro2
                     ));
                 }
                 after_each_body = Some(body);
+                after_each_is_async = is_async;
             }
-            SpecItem::It(desc, body) => {
+            SpecItem::It(desc, body, is_async) => {
                 let fn_name = format_ident!("{}", slugify(&desc));
-                tests.push((desc, fn_name, body));
+                tests.push((desc, fn_name, body, is_async));
             }
             SpecItem::Other(tokens) => {
                 other_items.push(tokens);
             }
         }
+    }
+
+    // Validate: async items require a runtime
+    let any_async = tests.iter().any(|(_, _, _, is_async)| *is_async)
+        || before_each_is_async
+        || after_each_is_async;
+
+    let runtime = runtime.or_else(default_runtime);
+
+    if any_async && runtime.is_none() {
+        let both_enabled = cfg!(feature = "tokio") && cfg!(feature = "async-std");
+        let msg = if both_enabled {
+            "both `tokio` and `async-std` features are enabled — specify the runtime \
+             explicitly: add `tokio;` or `async_std;` to the module"
+        } else {
+            "async test cases or hooks require a runtime: add `tokio;` or `async_std;` \
+             to the module, or enable the corresponding feature on `spectacular`"
+        };
+        return Err(syn::Error::new(proc_macro2::Span::call_site(), msg));
     }
 
     let has_before = before_body.is_some();
@@ -175,8 +265,24 @@ pub(crate) fn expand(input: proc_macro2::TokenStream) -> syn::Result<proc_macro2
 
     let before_fn = before_body.map(|body| quote! { fn __spec_before() { #body } });
     let after_fn = after_body.map(|body| quote! { fn __spec_after() { #body } });
-    let before_each_fn = before_each_body.map(|body| quote! { fn __spec_before_each() { #body } });
-    let after_each_fn = after_each_body.map(|body| quote! { fn __spec_after_each() { #body } });
+    let before_each_fn = if let Some(body) = before_each_body {
+        if before_each_is_async {
+            Some(quote! { async fn __spec_before_each() { #body } })
+        } else {
+            Some(quote! { fn __spec_before_each() { #body } })
+        }
+    } else {
+        None
+    };
+    let after_each_fn = if let Some(body) = after_each_body {
+        if after_each_is_async {
+            Some(quote! { async fn __spec_after_each() { #body } })
+        } else {
+            Some(quote! { fn __spec_after_each() { #body } })
+        }
+    } else {
+        None
+    };
 
     let once_static = has_before.then(|| {
         quote! { static __SPEC_BEFORE: ::std::sync::Once = ::std::sync::Once::new(); }
@@ -191,7 +297,10 @@ pub(crate) fn expand(input: proc_macro2::TokenStream) -> syn::Result<proc_macro2
 
     let test_fn_defs: Vec<proc_macro2::TokenStream> = tests
         .iter()
-        .map(|(_desc, fn_name, body)| {
+        .map(|(_desc, fn_name, body, is_async)| {
+            // A test needs async if it's declared async or any hook it uses is async
+            let test_needs_async = *is_async || before_each_is_async || after_each_is_async;
+
             let mut pre = proc_macro2::TokenStream::new();
             let mut post = proc_macro2::TokenStream::new();
 
@@ -205,11 +314,19 @@ pub(crate) fn expand(input: proc_macro2::TokenStream) -> syn::Result<proc_macro2
                 pre.extend(quote! { super::__spectacular_suite::before_each(); });
             }
             if has_before_each {
-                pre.extend(quote! { __spec_before_each(); });
+                if before_each_is_async {
+                    pre.extend(quote! { __spec_before_each().await; });
+                } else {
+                    pre.extend(quote! { __spec_before_each(); });
+                }
             }
 
             if has_after_each {
-                post.extend(quote! { __spec_after_each(); });
+                if after_each_is_async {
+                    post.extend(quote! { __spec_after_each().await; });
+                } else {
+                    post.extend(quote! { __spec_after_each(); });
+                }
             }
             if has_suite {
                 post.extend(quote! { super::__spectacular_suite::after_each(); });
@@ -226,12 +343,26 @@ pub(crate) fn expand(input: proc_macro2::TokenStream) -> syn::Result<proc_macro2
             }
 
             let needs_catch = has_after || has_after_each || has_suite;
-            let inner = wrap_test_body(pre, body.clone(), post, needs_catch);
 
-            quote! {
-                #[test]
-                fn #fn_name() {
-                    #inner
+            if test_needs_async {
+                let rt = runtime.unwrap();
+                let test_attr = rt.test_attr();
+                let inner = wrap_async_test_body(pre, body.clone(), post, needs_catch);
+
+                quote! {
+                    #test_attr
+                    async fn #fn_name() {
+                        #inner
+                    }
+                }
+            } else {
+                let inner = wrap_test_body(pre, body.clone(), post, needs_catch);
+
+                quote! {
+                    #[test]
+                    fn #fn_name() {
+                        #inner
+                    }
                 }
             }
         })
