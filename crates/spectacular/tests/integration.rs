@@ -454,3 +454,305 @@ spec! {
         }
     }
 }
+
+// ===== Context Injection Tests =====
+
+// --- Attribute style: before returns context, test receives &T, after receives &T ---
+
+static CTX_AFTER_CALLED: AtomicBool = AtomicBool::new(false);
+
+#[test_suite]
+mod attr_before_ctx {
+    use super::*;
+
+    #[before]
+    pub fn init() -> String {
+        "hello".to_string()
+    }
+
+    #[after]
+    pub fn cleanup(val: &String) {
+        assert_eq!(val, "hello");
+        CTX_AFTER_CALLED.store(true, Ordering::SeqCst);
+    }
+
+    #[test]
+    pub fn test_receives_before_ref(val: &String) {
+        assert_eq!(val, "hello");
+    }
+
+    #[test]
+    pub fn test_receives_before_ref_2(val: &String) {
+        assert_eq!(val, "hello");
+    }
+}
+
+// --- Attribute style: before_each returns context, test receives owned, after_each consumes ---
+
+static CTX_EACH_AFTER_EACH_SUM: AtomicUsize = AtomicUsize::new(0);
+
+#[test_suite]
+mod attr_before_each_ctx {
+    use super::*;
+
+    #[before_each]
+    pub fn setup() -> usize {
+        99
+    }
+
+    #[after_each]
+    pub fn teardown(val: usize) {
+        CTX_EACH_AFTER_EACH_SUM.fetch_add(val, Ordering::SeqCst);
+    }
+
+    #[test]
+    pub fn test_gets_owned(val: usize) {
+        assert_eq!(val, 99);
+    }
+
+    #[test]
+    pub fn test_gets_owned_2(val: usize) {
+        assert_eq!(val, 99);
+    }
+}
+
+// --- Attribute style: full stack with before + before_each + test + after_each + after ---
+
+static CTX_FULL_AFTER_CALLED: AtomicBool = AtomicBool::new(false);
+static CTX_FULL_AFTER_EACH_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+#[test_suite]
+mod attr_full_ctx_stack {
+    use super::*;
+
+    #[before]
+    pub fn init() -> i32 {
+        42
+    }
+
+    #[after]
+    pub fn cleanup(shared: &i32) {
+        assert_eq!(*shared, 42);
+        CTX_FULL_AFTER_CALLED.store(true, Ordering::SeqCst);
+    }
+
+    #[before_each]
+    pub fn setup(shared: &i32) -> String {
+        format!("ctx-{}", shared)
+    }
+
+    #[after_each]
+    pub fn teardown(shared: &i32, owned: String) {
+        assert_eq!(*shared, 42);
+        assert_eq!(owned, "ctx-42");
+        CTX_FULL_AFTER_EACH_COUNT.fetch_add(1, Ordering::SeqCst);
+    }
+
+    #[test]
+    pub fn test_full_stack(shared: &i32, owned: String) {
+        assert_eq!(*shared, 42);
+        assert_eq!(owned, "ctx-42");
+    }
+
+    #[test]
+    pub fn test_full_stack_2(shared: &i32, owned: String) {
+        assert_eq!(*shared, 42);
+        assert_eq!(owned, "ctx-42");
+    }
+}
+
+// --- Attribute style: test with no params, context flows to after_each ---
+
+static CTX_NO_PARAM_AFTER_EACH: AtomicUsize = AtomicUsize::new(0);
+
+#[test_suite]
+mod attr_no_test_params_ctx {
+    use super::*;
+
+    #[before_each]
+    pub fn setup() -> usize {
+        77
+    }
+
+    #[after_each]
+    pub fn teardown(val: usize) {
+        assert_eq!(val, 77);
+        CTX_NO_PARAM_AFTER_EACH.fetch_add(1, Ordering::SeqCst);
+    }
+
+    #[test]
+    pub fn test_no_params() {
+        assert!(true);
+    }
+}
+
+// --- spec! style: before -> Type, test with params, after with params ---
+
+static SPEC_CTX_AFTER_CALLED: AtomicBool = AtomicBool::new(false);
+
+spec! {
+    mod spec_before_ctx {
+        use super::*;
+
+        before -> String {
+            "world".to_string()
+        }
+
+        after |val: &String| {
+            assert_eq!(val, "world");
+            SPEC_CTX_AFTER_CALLED.store(true, Ordering::SeqCst);
+        }
+
+        it "receives before ref" |val: &String| {
+            assert_eq!(val, "world");
+        }
+
+        it "also receives before ref" |val: &String| {
+            assert_eq!(val, "world");
+        }
+    }
+}
+
+// --- spec! style: before_each returns context ---
+
+static SPEC_EACH_AFTER_EACH_SUM: AtomicUsize = AtomicUsize::new(0);
+
+spec! {
+    mod spec_before_each_ctx {
+        use super::*;
+
+        before_each -> usize {
+            55
+        }
+
+        after_each |val: usize| {
+            SPEC_EACH_AFTER_EACH_SUM.fetch_add(val, Ordering::SeqCst);
+        }
+
+        it "gets owned value" |val: usize| {
+            assert_eq!(val, 55);
+        }
+    }
+}
+
+// --- spec! style: full stack with before + before_each + after_each + after ---
+
+static SPEC_FULL_AFTER_CALLED: AtomicBool = AtomicBool::new(false);
+static SPEC_FULL_AFTER_EACH_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+spec! {
+    mod spec_full_ctx_stack {
+        use super::*;
+
+        before -> i32 {
+            10
+        }
+
+        after |shared: &i32| {
+            assert_eq!(*shared, 10);
+            SPEC_FULL_AFTER_CALLED.store(true, Ordering::SeqCst);
+        }
+
+        before_each |shared: &i32| -> String {
+            format!("item-{}", shared)
+        }
+
+        after_each |shared: &i32, owned: String| {
+            assert_eq!(*shared, 10);
+            assert_eq!(owned, "item-10");
+            SPEC_FULL_AFTER_EACH_COUNT.fetch_add(1, Ordering::SeqCst);
+        }
+
+        it "full stack" |shared: &i32, owned: String| {
+            assert_eq!(*shared, 10);
+            assert_eq!(owned, "item-10");
+        }
+
+        it "full stack again" |shared: &i32, owned: String| {
+            assert_eq!(*shared, 10);
+            assert_eq!(owned, "item-10");
+        }
+    }
+}
+
+// --- spec! style: async full stack ---
+
+static SPEC_ASYNC_CTX_AFTER: AtomicBool = AtomicBool::new(false);
+static SPEC_ASYNC_CTX_AFTER_EACH: AtomicUsize = AtomicUsize::new(0);
+
+spec! {
+    mod spec_async_full_ctx {
+        use super::*;
+        tokio;
+
+        before -> String {
+            "async-pool".to_string()
+        }
+
+        after |pool: &String| {
+            assert_eq!(pool, "async-pool");
+            SPEC_ASYNC_CTX_AFTER.store(true, Ordering::SeqCst);
+        }
+
+        async before_each |pool: &String| -> String {
+            tokio::task::yield_now().await;
+            format!("{}-ctx", pool)
+        }
+
+        async after_each |pool: &String, ctx: String| {
+            tokio::task::yield_now().await;
+            assert_eq!(pool, "async-pool");
+            assert_eq!(ctx, "async-pool-ctx");
+            SPEC_ASYNC_CTX_AFTER_EACH.fetch_add(1, Ordering::SeqCst);
+        }
+
+        async it "async full stack" |pool: &String, ctx: String| {
+            assert_eq!(pool, "async-pool");
+            assert_eq!(ctx, "async-pool-ctx");
+        }
+    }
+}
+
+// --- Attribute style: async full stack ---
+
+static ATTR_ASYNC_CTX_AFTER: AtomicBool = AtomicBool::new(false);
+static ATTR_ASYNC_CTX_AFTER_EACH: AtomicUsize = AtomicUsize::new(0);
+
+#[test_suite(tokio)]
+mod attr_async_full_ctx {
+    use super::*;
+
+    #[before]
+    pub fn init() -> String {
+        "db-pool".to_string()
+    }
+
+    #[after]
+    pub fn cleanup(pool: &String) {
+        assert_eq!(pool, "db-pool");
+        ATTR_ASYNC_CTX_AFTER.store(true, Ordering::SeqCst);
+    }
+
+    #[before_each]
+    pub async fn setup(pool: &String) -> String {
+        tokio::task::yield_now().await;
+        format!("{}-session", pool)
+    }
+
+    #[after_each]
+    pub async fn teardown(pool: &String, session: String) {
+        tokio::task::yield_now().await;
+        assert_eq!(pool, "db-pool");
+        assert_eq!(session, "db-pool-session");
+        ATTR_ASYNC_CTX_AFTER_EACH.fetch_add(1, Ordering::SeqCst);
+    }
+
+    #[test]
+    pub async fn async_full_ctx_test(pool: &String, session: String) {
+        assert_eq!(pool, "db-pool");
+        assert_eq!(session, "db-pool-session");
+    }
+}
+
+// --- Backwards compat: before without return type still works (already tested above) ---
+// --- Backwards compat: before_each without return type still works (already tested above) ---

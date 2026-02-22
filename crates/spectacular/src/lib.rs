@@ -179,6 +179,90 @@
 //! Explicit runtime arguments always take precedence over the feature default.
 //! If both features are enabled simultaneously, you must specify explicitly
 //! (the macro will emit a compile error).
+//!
+//! # Context Injection
+//!
+//! Hooks can produce context values that flow naturally to tests and teardown hooks,
+//! eliminating the need for `thread_local! + RefCell` patterns.
+//!
+//! ## `before` → shared `&T` via `OnceLock`
+//!
+//! When `before` returns a value, it's stored in a `OnceLock<T>`. Tests, `before_each`,
+//! `after_each`, and `after` all receive `&T`.
+//!
+//! ## `before_each` → owned `T` per test
+//!
+//! When `before_each` returns a value, each test gets an owned `T`. The test borrows it
+//! through `catch_unwind`, and `after_each` consumes it for cleanup.
+//!
+//! **How params are distinguished:** Reference params (`&T`) come from `before` context.
+//! Owned params come from `before_each` context.
+//!
+//! **`spec!` style:**
+//! ```ignore
+//! use spectacular::spec;
+//!
+//! spec! {
+//!     mod my_tests {
+//!         tokio;
+//!
+//!         before -> PgPool {
+//!             PgPool::connect("postgres://...").unwrap()
+//!         }
+//!
+//!         after |pool: &PgPool| {
+//!             pool.close();
+//!         }
+//!
+//!         async before_each |pool: &PgPool| -> TestContext {
+//!             TestContext::seed(pool).await
+//!         }
+//!
+//!         async after_each |pool: &PgPool, ctx: TestContext| {
+//!             ctx.cleanup(pool).await;
+//!         }
+//!
+//!         async it "creates a team" |pool: &PgPool, ctx: TestContext| {
+//!             // pool from before (shared &ref), ctx from before_each (owned)
+//!         }
+//!     }
+//! }
+//! ```
+//!
+//! **Attribute style:**
+//! ```ignore
+//! use spectacular::{test_suite, before, after, before_each, after_each};
+//!
+//! #[test_suite(tokio)]
+//! mod my_tests {
+//!     #[before]
+//!     fn init() -> PgPool {
+//!         PgPool::connect("postgres://...").unwrap()
+//!     }
+//!
+//!     #[after]
+//!     fn cleanup(pool: &PgPool) {
+//!         pool.close();
+//!     }
+//!
+//!     #[before_each]
+//!     async fn setup(pool: &PgPool) -> TestContext {
+//!         TestContext::seed(pool).await
+//!     }
+//!
+//!     #[after_each]
+//!     async fn teardown(pool: &PgPool, ctx: TestContext) {
+//!         ctx.cleanup(pool).await;
+//!     }
+//!
+//!     #[test]
+//!     async fn test_create_team(pool: &PgPool, ctx: TestContext) {
+//!         // pool from before (shared &ref), ctx from before_each (owned)
+//!     }
+//! }
+//! ```
+//!
+//! Hooks without return types or params continue to work as fire-and-forget (unchanged).
 
 /// Defines suite-level hooks that run across all opted-in test groups.
 ///
@@ -227,6 +311,17 @@ pub use spectacular_macros::suite;
 /// Helper functions, constants, and `use` statements can appear alongside
 /// hooks and test cases.
 ///
+/// # Context Injection
+///
+/// Hooks can return context values using `-> Type` syntax, and receive
+/// context via `|params|` syntax:
+///
+/// - `before -> Type { }` — returns shared context stored in `OnceLock<T>`
+/// - `before_each |shared: &T| -> U { }` — receives shared `&T`, returns owned `U`
+/// - `after_each |shared: &T, owned: U| { }` — receives both contexts
+/// - `it "desc" |shared: &T, owned: U| { }` — receives both contexts
+/// - `after |shared: &T| { }` — receives shared context
+///
 /// ```
 /// use spectacular::spec;
 ///
@@ -262,6 +357,20 @@ pub use spectacular_macros::spec;
 /// Combine with suite: `#[test_suite(suite, tokio)]`. Async test and hook
 /// functions are detected automatically from `async fn` signatures.
 ///
+/// # Context Injection
+///
+/// Hook functions with return types or parameters enable context injection.
+/// The macro reads function signatures to determine context flow:
+///
+/// - `#[before] fn init() -> T` — shared context via `OnceLock<T>`
+/// - `#[before_each] fn setup(shared: &T) -> U` — per-test context with shared input
+/// - `#[after_each] fn teardown(shared: &T, owned: U)` — receives both
+/// - `#[after] fn cleanup(shared: &T)` — receives shared context
+/// - `#[test] fn test_name(shared: &T, owned: U)` — receives both
+///
+/// Reference params (`&T`) come from `before` context. Owned params come
+/// from `before_each` context.
+///
 /// ```
 /// use spectacular::{test_suite, before_each};
 ///
@@ -282,10 +391,15 @@ pub use spectacular_macros::test_suite;
 /// Marks a function as a once-per-group setup hook inside a
 /// [`#[test_suite]`](macro@test_suite) module.
 ///
-/// The function runs exactly once before the first test in the group, guarded
-/// by [`std::sync::Once`]. Only one `#[before]` per module is allowed.
+/// The function runs exactly once before the first test in the group. Only one
+/// `#[before]` per module is allowed. Must be sync.
 ///
-/// In [`spec!`] blocks, use `before { ... }` instead.
+/// When the function returns a value (`fn init() -> T`), the return value is
+/// stored in an `OnceLock<T>` and made available as `&T` to tests,
+/// `before_each`, `after_each`, and `after` hooks via their parameters.
+/// Without a return type, the hook is fire-and-forget using `Once::call_once`.
+///
+/// In [`spec!`] blocks, use `before { ... }` or `before -> Type { ... }`.
 ///
 /// ```
 /// use spectacular::{test_suite, before};
@@ -309,8 +423,13 @@ pub use spectacular_macros::before;
 ///
 /// The function runs exactly once after the last test in the group completes,
 /// using an atomic countdown. Only one `#[after]` per module is allowed.
+/// Must be sync.
 ///
-/// In [`spec!`] blocks, use `after { ... }` instead.
+/// When `#[before]` returns context, `after` can receive it as `&T` via a
+/// reference parameter: `fn cleanup(pool: &PgPool)`. Without parameters,
+/// the hook is fire-and-forget.
+///
+/// In [`spec!`] blocks, use `after { ... }` or `after |name: &Type| { ... }`.
 ///
 /// ```
 /// use spectacular::{test_suite, after};
@@ -333,9 +452,16 @@ pub use spectacular_macros::after;
 /// [`#[test_suite]`](macro@test_suite) module.
 ///
 /// The function runs before every test in the group. Only one `#[before_each]`
-/// per module is allowed.
+/// per module is allowed. Can be `async fn`.
 ///
-/// In [`spec!`] blocks, use `before_each { ... }` instead.
+/// When the function has a return type (`fn setup() -> T`), the return value
+/// is passed as an owned `T` to the test and `after_each`. When the function
+/// has reference parameters (`fn setup(pool: &PgPool) -> T`), those are bound
+/// from the `#[before]` context. Without a return type, the hook is
+/// fire-and-forget.
+///
+/// In [`spec!`] blocks, use `before_each { ... }` or
+/// `before_each |name: &Type| -> Type { ... }`.
 ///
 /// ```
 /// use spectacular::{test_suite, before_each};
@@ -359,9 +485,14 @@ pub use spectacular_macros::before_each;
 ///
 /// The function runs after every test in the group, even if the test panics
 /// (protected by [`std::panic::catch_unwind`]). Only one `#[after_each]`
-/// per module is allowed.
+/// per module is allowed. Can be `async fn`.
 ///
-/// In [`spec!`] blocks, use `after_each { ... }` instead.
+/// When the function has parameters, reference params (`&T`) are bound from
+/// `#[before]` context, and owned params (`T`) consume the value returned by
+/// `#[before_each]`. Without parameters, the hook is fire-and-forget.
+///
+/// In [`spec!`] blocks, use `after_each { ... }` or
+/// `after_each |name: &Type, name: Type| { ... }`.
 ///
 /// ```
 /// use spectacular::{test_suite, after_each};
