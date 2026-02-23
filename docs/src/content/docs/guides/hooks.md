@@ -306,9 +306,64 @@ mod full_context {
 }
 ```
 
+### Inferred return type (`-> _`)
+
+When `before_each` returns a type that can't be named explicitly (e.g. `impl Trait`), use `-> _` to let the compiler infer it. The macro inlines the body at each call site instead of generating a function:
+
+**spec! style:**
+
+```rust
+use spectacular::spec;
+
+spec! {
+    mod inferred_return {
+        before_each -> _ {
+            (String::from("hello"), 42u32)
+        }
+
+        after_each |s: _, n: _| {
+            // types inferred from before_each
+        }
+
+        it "receives inferred values" |s: _, n: _| {
+            assert_eq!(s, "hello");
+            assert_eq!(n, 42);
+        }
+    }
+}
+```
+
+**Attribute style:**
+
+```rust
+use spectacular::{test_suite, before_each, after_each};
+
+#[test_suite]
+mod inferred_return {
+    #[before_each]
+    fn setup() -> _ {
+        (String::from("hello"), 42u32)
+    }
+
+    #[after_each]
+    fn teardown(s: _, n: _) {
+        // types inferred from before_each
+    }
+
+    #[test]
+    fn receives_inferred(s: _, n: _) {
+        assert_eq!(s, "hello");
+        assert_eq!(n, 42);
+    }
+}
+```
+
+`-> _` is **not** supported on `before` because it stores context in `OnceLock<T>`, which requires a concrete type. The macro emits a compile error if you try.
+
 ### How params are distinguished
 
 The macro distinguishes context sources by type:
 
 - **Reference params (`&T`)** come from `before` context (shared, read-only)
 - **Owned params (`T`)** come from `before_each` context (per-test, consumed by `after_each`)
+- **Inferred params (`_`)** also come from `before_each` context, with the type inferred by the compiler

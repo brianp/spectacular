@@ -41,6 +41,10 @@ pub(crate) fn default_runtime() -> Option<Runtime> {
     }
 }
 
+pub(crate) fn is_type_infer(ty: &syn::Type) -> bool {
+    matches!(ty, syn::Type::Infer(_))
+}
+
 pub(crate) fn slugify(s: &str) -> String {
     let mut result = String::new();
     let mut prev_underscore = true;

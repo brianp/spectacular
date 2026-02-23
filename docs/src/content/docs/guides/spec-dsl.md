@@ -223,6 +223,31 @@ spec! {
 }
 ```
 
+### Inferred return type (`-> _`)
+
+When `before_each` returns a type that can't be named (e.g. `impl Trait`), use `-> _` to let Rust infer it. The macro inlines the body instead of generating a separate function:
+
+```rust
+use spectacular::spec;
+
+spec! {
+    mod inferred_return {
+        before_each -> _ {
+            (String::from("hello"), 42u32)
+        }
+
+        it "receives inferred values" |s: _, n: _| {
+            assert_eq!(s, "hello");
+            assert_eq!(n, 42);
+        }
+    }
+}
+```
+
+Use `_` for owned params too — the type is inferred from the `before_each` return value.
+
+`-> _` is **not** supported on `before` because it stores context in `OnceLock<T>`, which requires a concrete type.
+
 ### Context syntax summary
 
 | Form | Description |
@@ -230,8 +255,11 @@ spec! {
 | `before -> Type { }` | Run-once setup returning shared context |
 | `after \|name: &Type\| { }` | Run-once teardown receiving shared context |
 | `before_each \|name: &Type\| -> Type { }` | Per-test setup with shared input, owned output |
+| `before_each -> _ { }` | Per-test setup with inferred return type |
 | `after_each \|name: &Type, name: Type\| { }` | Per-test teardown with shared + owned context |
+| `after_each \|name: &Type, name: _\| { }` | Per-test teardown with inferred owned type |
 | `it "desc" \|name: &Type, name: Type\| { }` | Test with shared + owned context |
+| `it "desc" \|name: &Type, name: _\| { }` | Test with inferred owned type |
 
 Hooks without return types or params continue to work as fire-and-forget (unchanged).
 

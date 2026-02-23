@@ -806,3 +806,174 @@ spec! {
         }
     }
 }
+
+// ===== Inferred return type (`-> _`) tests =====
+
+// --- spec! style: sync before_each -> _ ---
+
+spec! {
+    mod spec_before_each_infer_sync {
+        before_each -> _ {
+            (String::from("inferred"), 42u32)
+        }
+
+        it "receives inferred tuple" |s: _, n: _| {
+            assert_eq!(s, "inferred");
+            assert_eq!(n, 42);
+        }
+
+        it "each test gets fresh value" |s: _, n: _| {
+            assert_eq!(s, "inferred");
+            assert_eq!(n, 42);
+        }
+    }
+}
+
+// --- spec! style: async before_each -> _ with after_each using _ params ---
+
+static SPEC_INFER_ASYNC_AFTER_EACH: AtomicUsize = AtomicUsize::new(0);
+
+spec! {
+    mod spec_before_each_infer_async {
+        use super::*;
+        tokio;
+
+        async before_each -> _ {
+            tokio::task::yield_now().await;
+            (String::from("async-inferred"), 99u64)
+        }
+
+        async after_each |s: _, n: _| {
+            assert_eq!(s, "async-inferred");
+            assert_eq!(n, 99);
+            SPEC_INFER_ASYNC_AFTER_EACH.fetch_add(1, Ordering::SeqCst);
+        }
+
+        async it "receives async inferred value" |s: _, n: _| {
+            assert_eq!(s, "async-inferred");
+            assert_eq!(n, 99);
+        }
+    }
+}
+
+// --- spec! style: before -> i32 + before_each |n: &i32| -> _ + after_each with _ params ---
+
+static SPEC_INFER_FULL_AFTER_EACH: AtomicUsize = AtomicUsize::new(0);
+
+spec! {
+    mod spec_full_stack_infer {
+        use super::*;
+
+        before -> i32 { 7 }
+
+        before_each |n: &i32| -> _ {
+            format!("val-{}", n)
+        }
+
+        after_each |n: &i32, s: _| {
+            assert_eq!(*n, 7);
+            assert_eq!(s, "val-7");
+            SPEC_INFER_FULL_AFTER_EACH.fetch_add(1, Ordering::SeqCst);
+        }
+
+        it "full stack with infer" |n: &i32, s: _| {
+            assert_eq!(*n, 7);
+            assert_eq!(s, "val-7");
+        }
+
+        it "full stack with infer again" |n: &i32, s: _| {
+            assert_eq!(*n, 7);
+            assert_eq!(s, "val-7");
+        }
+    }
+}
+
+// --- attr style: sync #[before_each] fn setup() -> _ ---
+
+#[test_suite]
+mod attr_before_each_infer_sync {
+    #[before_each]
+    fn setup() -> _ {
+        (String::from("attr-inferred"), 88u32)
+    }
+
+    #[test]
+    fn receives_inferred(s: _, n: _) {
+        assert_eq!(s, "attr-inferred");
+        assert_eq!(n, 88);
+    }
+}
+
+// --- attr style: async #[before_each] async fn setup() -> _ ---
+
+static ATTR_INFER_ASYNC_AFTER_EACH: AtomicUsize = AtomicUsize::new(0);
+
+#[test_suite(tokio)]
+mod attr_before_each_infer_async {
+    use super::*;
+
+    #[before_each]
+    pub async fn setup() -> _ {
+        tokio::task::yield_now().await;
+        (String::from("attr-async"), 77u64)
+    }
+
+    #[after_each]
+    pub async fn teardown(s: _, n: _) {
+        assert_eq!(s, "attr-async");
+        assert_eq!(n, 77);
+        ATTR_INFER_ASYNC_AFTER_EACH.fetch_add(1, Ordering::SeqCst);
+    }
+
+    #[test]
+    pub async fn receives_async_inferred(s: _, n: _) {
+        assert_eq!(s, "attr-async");
+        assert_eq!(n, 77);
+    }
+}
+
+// --- attr style: full stack before -> i32 + before_each -> _ ---
+
+static ATTR_INFER_FULL_AFTER_EACH: AtomicUsize = AtomicUsize::new(0);
+
+#[test_suite]
+mod attr_full_stack_infer {
+    use super::*;
+
+    #[before]
+    pub fn init() -> i32 {
+        5
+    }
+
+    #[before_each]
+    pub fn setup(n: &i32) -> _ {
+        format!("item-{}", n)
+    }
+
+    #[after_each]
+    pub fn teardown(n: &i32, s: _) {
+        assert_eq!(*n, 5);
+        assert_eq!(s, "item-5");
+        ATTR_INFER_FULL_AFTER_EACH.fetch_add(1, Ordering::SeqCst);
+    }
+
+    #[test]
+    pub fn full_stack_infer(n: &i32, s: _) {
+        assert_eq!(*n, 5);
+        assert_eq!(s, "item-5");
+    }
+}
+
+// --- spec! style: single inferred return (no tuple) ---
+
+spec! {
+    mod spec_infer_single_value {
+        before_each -> _ {
+            vec![1, 2, 3]
+        }
+
+        it "receives single inferred value" |data: _| {
+            assert_eq!(data, vec![1, 2, 3]);
+        }
+    }
+}

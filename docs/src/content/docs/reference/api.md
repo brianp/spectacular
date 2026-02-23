@@ -37,13 +37,14 @@ You can also use `mod name` directly instead of `describe "string"`.
 | `after` | `after \|params\| { body }` | Teardown receiving shared context |
 | `before_each` | `before_each { body }` | Per-test setup (fire-and-forget) |
 | `before_each` | `before_each \|params\| -> Type { body }` | Per-test setup with context |
+| `before_each` | `before_each -> _ { body }` | Per-test setup with inferred return type |
 | `after_each` | `after_each { body }` | Per-test teardown |
 | `after_each` | `after_each \|params\| { body }` | Teardown receiving context |
 | `suite;` | `suite;` | Opt into suite hooks |
 | `tokio;` | `tokio;` | Use tokio async runtime |
 | `async_std;` | `async_std;` | Use async-std async runtime |
 
-Pipe params use `|name: Type, name: Type|` syntax. Reference params (`&T`) bind from `before` context; owned params bind from `before_each` context.
+Pipe params use `|name: Type, name: Type|` syntax. Reference params (`&T`) bind from `before` context; owned params bind from `before_each` context. Use `_` as a type for owned params or as the return type of `before_each` when the type can't be named (e.g. `impl Trait`).
 
 ### `suite!`
 
@@ -114,9 +115,14 @@ fn setup() -> TestContext { }                 // returns per-test context
 
 #[before_each]
 fn setup(pool: &PgPool) -> TestContext { }   // receives shared, returns per-test
+
+#[before_each]
+fn setup() -> _ { /* impl Trait ok */ }      // inferred return type (body inlined)
 ```
 
 Reference params bind from `#[before]` context. Return value is passed as owned to tests and `#[after_each]`.
+
+When the return type is `_`, the function body is inlined at each call site instead of generating a named function. This allows returning types that can't be written explicitly (e.g. `impl Trait`). Test and `#[after_each]` params should also use `_` for the corresponding type.
 
 ### `#[after_each]`
 

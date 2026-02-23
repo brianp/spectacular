@@ -262,6 +262,15 @@
 //! }
 //! ```
 //!
+//! ## Inferred return type (`-> _`)
+//!
+//! When `before_each` returns a type that can't be named (e.g. `impl Trait`),
+//! use `-> _` to let the compiler infer it. The macro inlines the body at each
+//! call site instead of generating a function. Use `_` for the corresponding
+//! owned params in tests and `after_each`.
+//!
+//! `-> _` is **not** supported on `before` (requires concrete type for `OnceLock<T>`).
+//!
 //! Hooks without return types or params continue to work as fire-and-forget (unchanged).
 
 /// Defines suite-level hooks that run across all opted-in test groups.
@@ -332,6 +341,7 @@ pub use spectacular_macros::suite;
 ///
 /// - `before -> Type { }` — returns shared context stored in `OnceLock<T>`
 /// - `before_each |shared: &T| -> U { }` — receives shared `&T`, returns owned `U`
+/// - `before_each -> _ { }` — inferred return type (body inlined)
 /// - `after_each |shared: &T, owned: U| { }` — receives both contexts
 /// - `it "desc" |shared: &T, owned: U| { }` — receives both contexts
 /// - `after |shared: &T| { }` — receives shared context
@@ -378,6 +388,7 @@ pub use spectacular_macros::spec;
 ///
 /// - `#[before] fn init() -> T` — shared context via `OnceLock<T>`
 /// - `#[before_each] fn setup(shared: &T) -> U` — per-test context with shared input
+/// - `#[before_each] fn setup() -> _` — inferred return type (body inlined)
 /// - `#[after_each] fn teardown(shared: &T, owned: U)` — receives both
 /// - `#[after] fn cleanup(shared: &T)` — receives shared context
 /// - `#[test] fn test_name(shared: &T, owned: U)` — receives both
@@ -474,8 +485,11 @@ pub use spectacular_macros::after;
 /// from the `#[before]` context. Without a return type, the hook is
 /// fire-and-forget.
 ///
-/// In [`spec!`] blocks, use `before_each { ... }` or
-/// `before_each |name: &Type| -> Type { ... }`.
+/// When the return type is `_` (`fn setup() -> _`), the body is inlined at
+/// each call site, allowing types that can't be named (e.g. `impl Trait`).
+///
+/// In [`spec!`] blocks, use `before_each { ... }`,
+/// `before_each |name: &Type| -> Type { ... }`, or `before_each -> _ { ... }`.
 ///
 /// ```
 /// use spectacular::{test_suite, before_each};

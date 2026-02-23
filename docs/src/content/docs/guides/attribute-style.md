@@ -197,6 +197,32 @@ The macro distinguishes context sources by type:
 - **Reference params (`&T`)** → bound from `#[before]` context (shared, read-only)
 - **Owned params (`T`)** → bound from `#[before_each]` context (per-test)
 
+### Inferred return type (`-> _`)
+
+When `#[before_each]` returns a type that can't be named (e.g. `impl Trait`), use `-> _`:
+
+```rust
+use spectacular::{test_suite, before_each};
+
+#[test_suite]
+mod inferred_context {
+    #[before_each]
+    fn setup() -> _ {
+        (String::from("hello"), 42u32)
+    }
+
+    #[test]
+    fn receives_inferred(s: _, n: _) {
+        assert_eq!(s, "hello");
+        assert_eq!(n, 42);
+    }
+}
+```
+
+The macro inlines the function body instead of generating a named function, allowing the compiler to infer the type. Use `_` for the corresponding params in tests and `#[after_each]`.
+
+`-> _` is **not** supported on `#[before]` (requires concrete type for `OnceLock<T>`).
+
 ### Context reference
 
 | Pattern | Description |
@@ -204,7 +230,9 @@ The macro distinguishes context sources by type:
 | `fn init() -> T` | `#[before]` returning shared context |
 | `fn cleanup(x: &T)` | `#[after]` receiving shared context |
 | `fn setup(x: &T) -> U` | `#[before_each]` with shared input, owned output |
+| `fn setup() -> _` | `#[before_each]` with inferred return type |
 | `fn teardown(x: &T, y: U)` | `#[after_each]` with shared + owned |
+| `fn teardown(x: &T, y: _)` | `#[after_each]` with inferred owned type |
 | `fn test_name(x: &T, y: U)` | `#[test]` with shared + owned |
 
 Hooks without return types or params continue to work as fire-and-forget (unchanged).
