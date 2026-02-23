@@ -1,3 +1,5 @@
+// Doc examples show `#[test]` as part of the test_suite API — they are illustrative, not runnable tests.
+#![allow(clippy::test_attr_in_doctest)]
 //! An RSpec-inspired test framework for Rust with stackable before/after hooks.
 //!
 //! Spectacular provides three layers of test hooks that stack in a predictable order:
