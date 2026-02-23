@@ -363,11 +363,11 @@ pub(crate) fn expand(input: proc_macro2::TokenStream) -> syn::Result<proc_macro2
             .chain(after_each_params.iter())
             .chain(tests.iter().flat_map(|(_, _, _, _, p)| p.iter()));
         for p in ref_sources {
-            if p.is_ref {
-                if let Some(inner) = ref_inner_type(&p.ty) {
-                    before_return_type = Some(inner);
-                    break;
-                }
+            if p.is_ref
+                && let Some(inner) = ref_inner_type(&p.ty)
+            {
+                before_return_type = Some(inner);
+                break;
             }
         }
     }

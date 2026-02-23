@@ -1,4 +1,4 @@
-use super::{write_colored_failures, write_colored_summary, FailedTest, Formatter};
+use super::{FailedTest, Formatter, write_colored_failures, write_colored_summary};
 use crate::event::SuiteResult;
 use crossterm::terminal;
 use std::io::{self, Write};
@@ -20,7 +20,7 @@ impl BoringFormatter {
     }
 
     fn emit_dot(&mut self, ch: char, w: &mut dyn Write) -> io::Result<()> {
-        if self.dot_count > 0 && self.dot_count % self.cols as usize == 0 {
+        if self.dot_count > 0 && self.dot_count.is_multiple_of(self.cols as usize) {
             writeln!(w)?;
         }
         write!(w, "{ch}")?;
@@ -81,7 +81,10 @@ impl Formatter for BoringFormatter {
         let total = result.passed + result.failed + result.ignored;
         if let Some(t) = result.exec_time {
             let tests_per_sec = total as f64 / t;
-            writeln!(w, "{total} tests run in {t:.4}s, {tests_per_sec:.1} tests/s")?;
+            writeln!(
+                w,
+                "{total} tests run in {t:.4}s, {tests_per_sec:.1} tests/s"
+            )?;
         } else {
             writeln!(w, "{total} tests run")?;
         }

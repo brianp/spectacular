@@ -40,9 +40,9 @@ pub fn run(
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::inherit());
 
-    let mut child = cmd.spawn().map_err(|e| {
-        io::Error::new(e.kind(), format!("Failed to spawn cargo test: {e}"))
-    })?;
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| io::Error::new(e.kind(), format!("Failed to spawn cargo test: {e}")))?;
 
     let stdout = child.stdout.take().expect("stdout was piped");
     let reader = BufReader::new(stdout);
@@ -74,7 +74,10 @@ pub fn run(
                 TestEvent::Started { ref name } => {
                     formatter.test_started(name, w)?;
                 }
-                TestEvent::Ok { ref name, exec_time } => {
+                TestEvent::Ok {
+                    ref name,
+                    exec_time,
+                } => {
                     formatter.test_passed(name, exec_time, w)?;
                 }
                 TestEvent::Failed {

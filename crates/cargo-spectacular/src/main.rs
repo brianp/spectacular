@@ -16,11 +16,11 @@ fn main() -> ExitCode {
     let mut all = false;
     let mut extra_args: Vec<String> = Vec::new();
 
-    let mut iter = args.iter().skip(1); // skip binary name
+    let iter = args.iter().skip(1); // skip binary name
     // Skip "spectacular" if invoked as `cargo spectacular`
     let mut args_to_parse: Vec<&String> = Vec::new();
     let mut skipped_subcommand = false;
-    while let Some(arg) = iter.next() {
+    for arg in iter {
         if !skipped_subcommand && arg == "spectacular" {
             skipped_subcommand = true;
             continue;

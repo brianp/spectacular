@@ -247,11 +247,12 @@ pub(crate) fn expand(
                 });
                 // Add inferred return type to before function
                 let is_before = func.attrs.iter().any(|a| a.path().is_ident("before"));
-                if is_before && before_type_was_inferred {
-                    if let Some(ref ret_ty) = before_return_type {
-                        clean.sig.output =
-                            syn::ReturnType::Type(Default::default(), Box::new(ret_ty.clone()));
-                    }
+                if is_before
+                    && before_type_was_inferred
+                    && let Some(ref ret_ty) = before_return_type
+                {
+                    clean.sig.output =
+                        syn::ReturnType::Type(Default::default(), Box::new(ret_ty.clone()));
                 }
                 Some(quote! { #clean })
             } else {

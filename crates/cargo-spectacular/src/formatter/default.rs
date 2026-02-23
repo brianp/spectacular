@@ -17,7 +17,7 @@ impl DefaultFormatter {
     }
 
     fn emit_dot(&mut self, ch: char, w: &mut dyn Write) -> io::Result<()> {
-        if self.dot_count > 0 && self.dot_count % 80 == 0 {
+        if self.dot_count > 0 && self.dot_count.is_multiple_of(80) {
             writeln!(w)?;
         }
         write!(w, "{ch}")?;

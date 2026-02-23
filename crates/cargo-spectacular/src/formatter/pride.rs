@@ -1,4 +1,4 @@
-use super::{fg, reset, write_colored_failures, write_colored_summary, FailedTest, Formatter};
+use super::{FailedTest, Formatter, fg, reset, write_colored_failures, write_colored_summary};
 use crate::event::SuiteResult;
 use crossterm::terminal;
 use std::f64::consts::TAU;
@@ -33,7 +33,7 @@ impl PrideFormatter {
     }
 
     fn emit_dot(&mut self, ch: char, w: &mut dyn Write) -> io::Result<()> {
-        if self.dot_count > 0 && self.dot_count % self.cols as usize == 0 {
+        if self.dot_count > 0 && self.dot_count.is_multiple_of(self.cols as usize) {
             writeln!(w)?;
         }
         let (r, g, b) = rainbow_color(self.dot_count);
