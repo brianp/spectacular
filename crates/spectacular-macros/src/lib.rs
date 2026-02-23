@@ -45,6 +45,21 @@ pub(crate) fn is_type_infer(ty: &syn::Type) -> bool {
     matches!(ty, syn::Type::Infer(_))
 }
 
+/// Extract the inner type `T` from a `&T` reference type.
+/// Returns `None` if not a reference or if the inner type is `_`.
+pub(crate) fn ref_inner_type(ty: &syn::Type) -> Option<syn::Type> {
+    if let syn::Type::Reference(r) = ty {
+        let inner = &*r.elem;
+        if is_type_infer(inner) {
+            None
+        } else {
+            Some(inner.clone())
+        }
+    } else {
+        None
+    }
+}
+
 pub(crate) fn slugify(s: &str) -> String {
     let mut result = String::new();
     let mut prev_underscore = true;

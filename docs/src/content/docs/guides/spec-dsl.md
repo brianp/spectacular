@@ -223,16 +223,38 @@ spec! {
 }
 ```
 
-### Inferred return type (`-> _`)
+### Inferred context (no return type)
 
-When `before_each` returns a type that can't be named (e.g. `impl Trait`), use `-> _` to let Rust infer it. The macro inlines the body instead of generating a separate function:
+Hooks can omit their return type and let the macro infer everything from downstream consumers.
+
+#### `before` — inferred from `&T` params
+
+When `before` has no `-> Type` but a downstream hook or test uses an explicit `&T` param, the macro infers `OnceLock<T>` automatically:
+
+```rust
+use spectacular::spec;
+
+spec! {
+    mod inferred_before {
+        before { String::from("shared") }
+
+        it "receives shared ref" |val: &String| {
+            assert_eq!(val, "shared");
+        }
+    }
+}
+```
+
+#### `before_each` — inferred from `_` params
+
+When `before_each` has no return type, the last expression of the body **is** the context. Tests use `_` as the param type and the compiler infers the rest:
 
 ```rust
 use spectacular::spec;
 
 spec! {
     mod inferred_return {
-        before_each -> _ {
+        before_each {
             (String::from("hello"), 42u32)
         }
 
@@ -244,24 +266,23 @@ spec! {
 }
 ```
 
-Use `_` for owned params too — the type is inferred from the `before_each` return value.
-
-`-> _` is **not** supported on `before` because it stores context in `OnceLock<T>`, which requires a concrete type.
+The macro detects `_`-typed params in tests or `after_each` and inlines the `before_each` body automatically. Without `_` params or `&T` consumers, hooks with no return type are fire-and-forget as usual.
 
 ### Context syntax summary
 
 | Form | Description |
 |------|-------------|
-| `before -> Type { }` | Run-once setup returning shared context |
+| `before -> Type { }` | Run-once setup returning shared context (explicit) |
+| `before { }` | Run-once setup with inferred context (when consumers use `&T` params) |
 | `after \|name: &Type\| { }` | Run-once teardown receiving shared context |
 | `before_each \|name: &Type\| -> Type { }` | Per-test setup with shared input, owned output |
-| `before_each -> _ { }` | Per-test setup with inferred return type |
+| `before_each { }` | Per-test setup with inferred context (when tests use `_` params) |
 | `after_each \|name: &Type, name: Type\| { }` | Per-test teardown with shared + owned context |
 | `after_each \|name: &Type, name: _\| { }` | Per-test teardown with inferred owned type |
 | `it "desc" \|name: &Type, name: Type\| { }` | Test with shared + owned context |
 | `it "desc" \|name: &Type, name: _\| { }` | Test with inferred owned type |
 
-Hooks without return types or params continue to work as fire-and-forget (unchanged).
+Hooks without return types or `_` params continue to work as fire-and-forget (unchanged).
 
 ## Visibility
 

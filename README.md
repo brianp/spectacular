@@ -205,7 +205,50 @@ mod database_tests {
 }
 ```
 
-Hooks without return types or params continue to work as fire-and-forget (unchanged).
+### Inferred context (no return type)
+
+Hooks can omit their return type and let the macro infer everything from downstream consumers.
+
+**`before` — inferred from `&T` params:**
+
+When `before` has no `-> Type` but a downstream hook or test uses an explicit `&T` param, the macro infers `OnceLock<T>` automatically:
+
+```rust
+use spectacular::spec;
+
+spec! {
+    mod inferred_before {
+        before { String::from("shared") }
+
+        it "receives shared ref" |val: &String| {
+            assert_eq!(val, "shared");
+        }
+    }
+}
+```
+
+**`before_each` — inferred from `_` params:**
+
+When `before_each` has no return type, the last expression of the body **is** the context. Tests use `_` as the param type and the compiler infers the rest:
+
+```rust
+use spectacular::spec;
+
+spec! {
+    mod inferred_context {
+        before_each {
+            (String::from("hello"), 42u32)
+        }
+
+        it "receives inferred values" |s: _, n: _| {
+            assert_eq!(s, "hello");
+            assert_eq!(n, 42);
+        }
+    }
+}
+```
+
+Without `_` params or `&T` consumers, hooks with no return type are fire-and-forget as usual.
 
 ## Hook Execution Order
 
@@ -279,9 +322,11 @@ With the feature enabled, `async it` / `async fn` test cases Just Work without e
 |------|-------------|
 | `describe "name" { }` | BDD-style group (string slugified to module name) |
 | `mod name { }` | Group with explicit module name |
-| `before -> Type { }` | Run-once setup returning shared context |
+| `before -> Type { }` | Run-once setup returning shared context (explicit) |
+| `before { }` | Run-once setup with inferred context (when consumers use `&T` params) |
 | `after \|name: &Type\| { }` | Run-once teardown receiving shared context |
 | `before_each \|name: &Type\| -> Type { }` | Per-test setup with shared context input, owned output |
+| `before_each { }` | Per-test setup with inferred context (when tests use `_` params) |
 | `after_each \|name: &Type, name: Type\| { }` | Per-test teardown with shared + owned context |
 | `it "desc" \|name: &Type, name: Type\| { }` | Test with shared + owned context |
 
@@ -289,9 +334,11 @@ With the feature enabled, `async it` / `async fn` test cases Just Work without e
 
 | Pattern | Description |
 |---------|-------------|
-| `fn init() -> T` | `#[before]` returning shared context |
+| `fn init() -> T` | `#[before]` returning shared context (explicit) |
+| `fn init()` | `#[before]` with inferred context (when consumers use `&T` params) |
 | `fn cleanup(x: &T)` | `#[after]` receiving shared context |
 | `fn setup(x: &T) -> U` | `#[before_each]` with shared input, owned output |
+| `fn setup()` | `#[before_each]` with inferred context (when tests use `_` params) |
 | `fn teardown(x: &T, y: U)` | `#[after_each]` with shared + owned |
 | `fn test_name(x: &T, y: U)` | `#[test]` with shared + owned |
 

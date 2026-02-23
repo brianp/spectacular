@@ -5,7 +5,8 @@ use syn::parse::{Parse, ParseStream};
 use syn::{Ident, LitStr, Token, braced};
 
 use crate::{
-    Runtime, default_runtime, is_type_infer, slugify, wrap_async_test_body, wrap_test_body,
+    Runtime, default_runtime, is_type_infer, ref_inner_type, slugify, wrap_async_test_body,
+    wrap_test_body,
 };
 
 /// A parsed parameter from pipe syntax: `|name: &Type, name2: Type|`
@@ -346,14 +347,29 @@ pub(crate) fn expand(input: proc_macro2::TokenStream) -> syn::Result<proc_macro2
         return Err(syn::Error::new(proc_macro2::Span::call_site(), msg));
     }
 
-    // Error: `before -> _` is not allowed (needs OnceLock<T>, requires concrete type)
-    if let Some(ref ret_ty) = before_return_type
-        && is_type_infer(ret_ty)
-    {
-        return Err(syn::Error::new(
-            proc_macro2::Span::call_site(),
-            "`before` stores context in `OnceLock<T>` — use a concrete type instead of `_`",
-        ));
+    // Strip `-> _` from before and before_each — no longer needed as a signal
+    if before_return_type.as_ref().is_some_and(is_type_infer) {
+        before_return_type = None;
+    }
+    if before_each_return_type.as_ref().is_some_and(is_type_infer) {
+        before_each_return_type = None;
+    }
+
+    // Infer before's return type from consumer &T params when not explicit
+    if before_return_type.is_none() && before_body.is_some() {
+        let ref_sources = after_params
+            .iter()
+            .chain(before_each_params.iter())
+            .chain(after_each_params.iter())
+            .chain(tests.iter().flat_map(|(_, _, _, _, p)| p.iter()));
+        for p in ref_sources {
+            if p.is_ref {
+                if let Some(inner) = ref_inner_type(&p.ty) {
+                    before_return_type = Some(inner);
+                    break;
+                }
+            }
+        }
     }
 
     let has_before = before_body.is_some();
@@ -362,7 +378,13 @@ pub(crate) fn expand(input: proc_macro2::TokenStream) -> syn::Result<proc_macro2
     let has_after_each = after_each_body.is_some();
     let has_before_ctx = before_return_type.is_some();
     let has_before_each_ctx = before_each_return_type.is_some();
-    let before_each_needs_inline = before_each_return_type.as_ref().is_some_and(is_type_infer);
+
+    // Detect inline mode from consumers: tests or after_each have `_`-typed params
+    let has_infer_consumers = tests
+        .iter()
+        .any(|(_, _, _, _, params)| params.iter().any(|p| is_type_infer(&p.ty)))
+        || after_each_params.iter().any(|p| is_type_infer(&p.ty));
+    let before_each_needs_inline = !has_before_each_ctx && has_infer_consumers;
     let after_each_needs_inline = after_each_params.iter().any(|p| is_type_infer(&p.ty));
     let test_count = tests.len();
 
@@ -500,110 +522,108 @@ pub(crate) fn expand(input: proc_macro2::TokenStream) -> syn::Result<proc_macro2
 
             // --- Group before_each ---
             if has_before_each {
-                if has_before_each_ctx {
-                    if before_each_needs_inline {
-                        // Inline mode: bind ref params, then inline body in closure/async block
-                        let ref_bindings: Vec<proc_macro2::TokenStream> = before_each_params
-                            .iter()
-                            .filter(|p| p.is_ref)
-                            .map(|p| {
-                                let pat = &p.pat;
-                                let ty = &p.ty;
-                                quote! { let #pat: #ty = __before_ctx; }
-                            })
-                            .collect();
+                if before_each_needs_inline {
+                    // Inline mode: bind ref params, then inline body in closure/async block
+                    let ref_bindings: Vec<proc_macro2::TokenStream> = before_each_params
+                        .iter()
+                        .filter(|p| p.is_ref)
+                        .map(|p| {
+                            let pat = &p.pat;
+                            let ty = &p.ty;
+                            quote! { let #pat: #ty = __before_ctx; }
+                        })
+                        .collect();
 
-                        let be_body = before_each_body.as_ref().unwrap();
-                        let inline_expr = if before_each_is_async {
-                            quote! { { #(#ref_bindings)* async move { #be_body }.await } }
-                        } else {
-                            quote! { { #(#ref_bindings)* (move || { #be_body })() } }
-                        };
+                    let be_body = before_each_body.as_ref().unwrap();
+                    let inline_expr = if before_each_is_async {
+                        quote! { { #(#ref_bindings)* async move { #be_body }.await } }
+                    } else {
+                        quote! { { #(#ref_bindings)* (move || { #be_body })() } }
+                    };
 
-                        // Destructure into owned params (same logic as function-call path)
-                        let owned_test_pats: Vec<&syn::Pat> = test_params
+                    // Destructure into owned params (same logic as function-call path)
+                    let owned_test_pats: Vec<&syn::Pat> = test_params
+                        .iter()
+                        .filter(|p| !p.is_ref)
+                        .map(|p| &p.pat)
+                        .collect();
+
+                    if owned_test_pats.len() > 1 {
+                        pre.extend(quote! {
+                            let (#(#owned_test_pats),*) = #inline_expr;
+                        });
+                    } else if owned_test_pats.len() == 1 {
+                        let pat = owned_test_pats[0];
+                        pre.extend(quote! {
+                            let #pat = #inline_expr;
+                        });
+                    } else {
+                        let after_each_owned_pats: Vec<&syn::Pat> = after_each_params
                             .iter()
                             .filter(|p| !p.is_ref)
                             .map(|p| &p.pat)
                             .collect();
 
-                        if owned_test_pats.len() > 1 {
+                        if after_each_owned_pats.len() > 1 {
                             pre.extend(quote! {
-                                let (#(#owned_test_pats),*) = #inline_expr;
+                                let (#(#after_each_owned_pats),*) = #inline_expr;
                             });
-                        } else if owned_test_pats.len() == 1 {
-                            let pat = owned_test_pats[0];
+                        } else if after_each_owned_pats.len() == 1 {
+                            let pat = after_each_owned_pats[0];
                             pre.extend(quote! {
                                 let #pat = #inline_expr;
                             });
                         } else {
-                            let after_each_owned_pats: Vec<&syn::Pat> = after_each_params
-                                .iter()
-                                .filter(|p| !p.is_ref)
-                                .map(|p| &p.pat)
-                                .collect();
-
-                            if after_each_owned_pats.len() > 1 {
-                                pre.extend(quote! {
-                                    let (#(#after_each_owned_pats),*) = #inline_expr;
-                                });
-                            } else if after_each_owned_pats.len() == 1 {
-                                let pat = after_each_owned_pats[0];
-                                pre.extend(quote! {
-                                    let #pat = #inline_expr;
-                                });
-                            } else {
-                                pre.extend(quote! { #inline_expr; });
-                            }
+                            pre.extend(quote! { #inline_expr; });
                         }
+                    }
+                } else if has_before_each_ctx {
+                    // Function call mode
+                    let call_args: Vec<proc_macro2::TokenStream> = before_each_params
+                        .iter()
+                        .filter(|p| p.is_ref)
+                        .map(|_| quote! { __before_ctx })
+                        .collect();
+
+                    let call = if before_each_is_async {
+                        quote! { __spec_before_each(#(#call_args),*).await }
                     } else {
-                        // Function call mode
-                        let call_args: Vec<proc_macro2::TokenStream> = before_each_params
-                            .iter()
-                            .filter(|p| p.is_ref)
-                            .map(|_| quote! { __before_ctx })
-                            .collect();
+                        quote! { __spec_before_each(#(#call_args),*) }
+                    };
 
-                        let call = if before_each_is_async {
-                            quote! { __spec_before_each(#(#call_args),*).await }
-                        } else {
-                            quote! { __spec_before_each(#(#call_args),*) }
-                        };
+                    let owned_test_pats: Vec<&syn::Pat> = test_params
+                        .iter()
+                        .filter(|p| !p.is_ref)
+                        .map(|p| &p.pat)
+                        .collect();
 
-                        let owned_test_pats: Vec<&syn::Pat> = test_params
+                    if owned_test_pats.len() > 1 {
+                        pre.extend(quote! {
+                            let (#(#owned_test_pats),*) = #call;
+                        });
+                    } else if owned_test_pats.len() == 1 {
+                        let pat = owned_test_pats[0];
+                        pre.extend(quote! {
+                            let #pat = #call;
+                        });
+                    } else {
+                        let after_each_owned_pats: Vec<&syn::Pat> = after_each_params
                             .iter()
                             .filter(|p| !p.is_ref)
                             .map(|p| &p.pat)
                             .collect();
 
-                        if owned_test_pats.len() > 1 {
+                        if after_each_owned_pats.len() > 1 {
                             pre.extend(quote! {
-                                let (#(#owned_test_pats),*) = #call;
+                                let (#(#after_each_owned_pats),*) = #call;
                             });
-                        } else if owned_test_pats.len() == 1 {
-                            let pat = owned_test_pats[0];
+                        } else if after_each_owned_pats.len() == 1 {
+                            let pat = after_each_owned_pats[0];
                             pre.extend(quote! {
                                 let #pat = #call;
                             });
                         } else {
-                            let after_each_owned_pats: Vec<&syn::Pat> = after_each_params
-                                .iter()
-                                .filter(|p| !p.is_ref)
-                                .map(|p| &p.pat)
-                                .collect();
-
-                            if after_each_owned_pats.len() > 1 {
-                                pre.extend(quote! {
-                                    let (#(#after_each_owned_pats),*) = #call;
-                                });
-                            } else if after_each_owned_pats.len() == 1 {
-                                let pat = after_each_owned_pats[0];
-                                pre.extend(quote! {
-                                    let #pat = #call;
-                                });
-                            } else {
-                                pre.extend(quote! { #call; });
-                            }
+                            pre.extend(quote! { #call; });
                         }
                     }
                 } else {

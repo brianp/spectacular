@@ -262,16 +262,13 @@
 //! }
 //! ```
 //!
-//! ## Inferred return type (`-> _`)
+//! ## Inferred context (no return type)
 //!
-//! When `before_each` returns a type that can't be named (e.g. `impl Trait`),
-//! use `-> _` to let the compiler infer it. The macro inlines the body at each
-//! call site instead of generating a function. Use `_` for the corresponding
-//! owned params in tests and `after_each`.
+//! When `before_each` has no return type, the last expression of the body **is**
+//! the context. Tests and `after_each` use `_` as the param type to receive it.
+//! The macro detects `_`-typed params and inlines the body automatically.
 //!
-//! `-> _` is **not** supported on `before` (requires concrete type for `OnceLock<T>`).
-//!
-//! Hooks without return types or params continue to work as fire-and-forget (unchanged).
+//! Without `_` params, a void `before_each` is fire-and-forget as usual.
 
 /// Defines suite-level hooks that run across all opted-in test groups.
 ///
@@ -340,11 +337,14 @@ pub use spectacular_macros::suite;
 /// context via `|params|` syntax:
 ///
 /// - `before -> Type { }` — returns shared context stored in `OnceLock<T>`
+/// - `before { }` — inferred shared context when consumers use explicit `&T` params
 /// - `before_each |shared: &T| -> U { }` — receives shared `&T`, returns owned `U`
-/// - `before_each -> _ { }` — inferred return type (body inlined)
+/// - `before_each { }` — inferred context when tests use `_` params
 /// - `after_each |shared: &T, owned: U| { }` — receives both contexts
 /// - `it "desc" |shared: &T, owned: U| { }` — receives both contexts
 /// - `after |shared: &T| { }` — receives shared context
+///
+/// # Basic usage
 ///
 /// ```
 /// use spectacular::spec;
@@ -361,6 +361,76 @@ pub use spectacular_macros::suite;
 ///
 ///         it "does arithmetic" {
 ///             assert_eq!(2 + 2, 4);
+///         }
+///     }
+/// }
+/// # fn main() {}
+/// ```
+///
+/// # Context injection
+///
+/// ```
+/// use spectacular::spec;
+///
+/// spec! {
+///     mod with_context {
+///         before -> i32 { 42 }
+///
+///         before_each |n: &i32| -> String {
+///             format!("val-{}", n)
+///         }
+///
+///         after_each |n: &i32, s: String| {
+///             assert_eq!(*n, 42);
+///             assert_eq!(s, "val-42");
+///         }
+///
+///         it "receives both" |n: &i32, s: String| {
+///             assert_eq!(*n, 42);
+///             assert_eq!(s, "val-42");
+///         }
+///     }
+/// }
+/// # fn main() {}
+/// ```
+///
+/// # Inferred context (`before`)
+///
+/// When `before` has no `-> Type` but consumers use explicit `&T` params,
+/// the macro infers `OnceLock<T>` automatically:
+///
+/// ```
+/// use spectacular::spec;
+///
+/// spec! {
+///     mod inferred_before {
+///         before { String::from("shared") }
+///
+///         it "receives shared ref" |val: &String| {
+///             assert_eq!(val, "shared");
+///         }
+///     }
+/// }
+/// # fn main() {}
+/// ```
+///
+/// # Inferred context (`before_each`)
+///
+/// When `before_each` has no return type and tests use `_` params,
+/// the last expression becomes the context:
+///
+/// ```
+/// use spectacular::spec;
+///
+/// spec! {
+///     mod inferred {
+///         before_each {
+///             (String::from("hello"), 42u32)
+///         }
+///
+///         it "receives inferred values" |s: _, n: _| {
+///             assert_eq!(s, "hello");
+///             assert_eq!(n, 42);
 ///         }
 ///     }
 /// }
@@ -387,14 +457,17 @@ pub use spectacular_macros::spec;
 /// The macro reads function signatures to determine context flow:
 ///
 /// - `#[before] fn init() -> T` — shared context via `OnceLock<T>`
+/// - `#[before] fn init()` — inferred shared context when consumers use explicit `&T` params
 /// - `#[before_each] fn setup(shared: &T) -> U` — per-test context with shared input
-/// - `#[before_each] fn setup() -> _` — inferred return type (body inlined)
+/// - `#[before_each] fn setup()` — inferred context when tests use `_` params
 /// - `#[after_each] fn teardown(shared: &T, owned: U)` — receives both
 /// - `#[after] fn cleanup(shared: &T)` — receives shared context
 /// - `#[test] fn test_name(shared: &T, owned: U)` — receives both
 ///
 /// Reference params (`&T`) come from `before` context. Owned params come
 /// from `before_each` context.
+///
+/// # Basic usage
 ///
 /// ```
 /// use spectacular::{test_suite, before_each};
@@ -411,6 +484,36 @@ pub use spectacular_macros::spec;
 /// }
 /// # fn main() {}
 /// ```
+///
+/// # Context injection
+///
+/// ```
+/// use spectacular::{test_suite, before, before_each, after_each};
+///
+/// #[test_suite]
+/// mod with_context {
+///     #[before]
+///     fn init() -> i32 { 42 }
+///
+///     #[before_each]
+///     fn setup(n: &i32) -> String {
+///         format!("val-{}", n)
+///     }
+///
+///     #[after_each]
+///     fn teardown(n: &i32, s: String) {
+///         assert_eq!(*n, 42);
+///         assert_eq!(s, "val-42");
+///     }
+///
+///     #[test]
+///     fn receives_both(n: &i32, s: String) {
+///         assert_eq!(*n, 42);
+///         assert_eq!(s, "val-42");
+///     }
+/// }
+/// # fn main() {}
+/// ```
 pub use spectacular_macros::test_suite;
 
 /// Marks a function as a once-per-group setup hook inside a
@@ -422,9 +525,13 @@ pub use spectacular_macros::test_suite;
 /// When the function returns a value (`fn init() -> T`), the return value is
 /// stored in an `OnceLock<T>` and made available as `&T` to tests,
 /// `before_each`, `after_each`, and `after` hooks via their parameters.
-/// Without a return type, the hook is fire-and-forget using `Once::call_once`.
+/// Without a return type, the hook is fire-and-forget using `Once::call_once`
+/// — unless downstream consumers use explicit `&T` params, in which case the
+/// macro infers `OnceLock<T>` automatically.
 ///
 /// In [`spec!`] blocks, use `before { ... }` or `before -> Type { ... }`.
+///
+/// # Fire-and-forget
 ///
 /// ```
 /// use spectacular::{test_suite, before};
@@ -437,6 +544,49 @@ pub use spectacular_macros::test_suite;
 ///     #[test]
 ///     fn my_test() {
 ///         assert!(true);
+///     }
+/// }
+/// # fn main() {}
+/// ```
+///
+/// # Returning shared context
+///
+/// ```
+/// use spectacular::{test_suite, before};
+///
+/// #[test_suite]
+/// mod with_context {
+///     #[before]
+///     fn init() -> String {
+///         "shared-resource".to_string()
+///     }
+///
+///     #[test]
+///     fn receives_ref(val: &String) {
+///         assert_eq!(val, "shared-resource");
+///     }
+/// }
+/// # fn main() {}
+/// ```
+///
+/// # Inferred return type
+///
+/// When the function has no return type but consumers use explicit `&T` params,
+/// the macro infers the `OnceLock<T>` type automatically:
+///
+/// ```
+/// use spectacular::{test_suite, before};
+///
+/// #[test_suite]
+/// mod inferred {
+///     #[before]
+///     fn init() {
+///         42i32
+///     }
+///
+///     #[test]
+///     fn receives_ref(val: &i32) {
+///         assert_eq!(*val, 42);
 ///     }
 /// }
 /// # fn main() {}
@@ -456,6 +606,8 @@ pub use spectacular_macros::before;
 ///
 /// In [`spec!`] blocks, use `after { ... }` or `after |name: &Type| { ... }`.
 ///
+/// # Fire-and-forget
+///
 /// ```
 /// use spectacular::{test_suite, after};
 ///
@@ -467,6 +619,31 @@ pub use spectacular_macros::before;
 ///     #[test]
 ///     fn my_test() {
 ///         assert!(true);
+///     }
+/// }
+/// # fn main() {}
+/// ```
+///
+/// # Receiving shared context
+///
+/// ```
+/// use spectacular::{test_suite, before, after};
+///
+/// #[test_suite]
+/// mod with_context {
+///     #[before]
+///     fn init() -> String {
+///         "resource".to_string()
+///     }
+///
+///     #[after]
+///     fn cleanup(val: &String) {
+///         assert_eq!(val, "resource");
+///     }
+///
+///     #[test]
+///     fn my_test(val: &String) {
+///         assert_eq!(val, "resource");
 ///     }
 /// }
 /// # fn main() {}
@@ -483,13 +660,13 @@ pub use spectacular_macros::after;
 /// is passed as an owned `T` to the test and `after_each`. When the function
 /// has reference parameters (`fn setup(pool: &PgPool) -> T`), those are bound
 /// from the `#[before]` context. Without a return type, the hook is
-/// fire-and-forget.
+/// fire-and-forget — unless tests use `_`-typed params, in which case
+/// the body is inlined and the last expression becomes the context.
 ///
-/// When the return type is `_` (`fn setup() -> _`), the body is inlined at
-/// each call site, allowing types that can't be named (e.g. `impl Trait`).
+/// In [`spec!`] blocks, use `before_each { ... }` or
+/// `before_each |name: &Type| -> Type { ... }`.
 ///
-/// In [`spec!`] blocks, use `before_each { ... }`,
-/// `before_each |name: &Type| -> Type { ... }`, or `before_each -> _ { ... }`.
+/// # Fire-and-forget
 ///
 /// ```
 /// use spectacular::{test_suite, before_each};
@@ -502,6 +679,55 @@ pub use spectacular_macros::after;
 ///     #[test]
 ///     fn my_test() {
 ///         assert!(true);
+///     }
+/// }
+/// # fn main() {}
+/// ```
+///
+/// # Returning per-test context
+///
+/// ```
+/// use spectacular::{test_suite, before_each, after_each};
+///
+/// #[test_suite]
+/// mod with_context {
+///     #[before_each]
+///     fn setup() -> usize {
+///         42
+///     }
+///
+///     #[after_each]
+///     fn teardown(val: usize) {
+///         assert_eq!(val, 42);
+///     }
+///
+///     #[test]
+///     fn receives_owned(val: usize) {
+///         assert_eq!(val, 42);
+///     }
+/// }
+/// # fn main() {}
+/// ```
+///
+/// # Inferred context (no return type)
+///
+/// When tests or `#[after_each]` use `_` params, the body is inlined and
+/// the last expression becomes the context with compiler-inferred types:
+///
+/// ```
+/// use spectacular::{test_suite, before_each};
+///
+/// #[test_suite]
+/// mod inferred {
+///     #[before_each]
+///     fn setup() {
+///         (String::from("hello"), 42u32)
+///     }
+///
+///     #[test]
+///     fn receives_inferred(s: _, n: _) {
+///         assert_eq!(s, "hello");
+///         assert_eq!(n, 42);
 ///     }
 /// }
 /// # fn main() {}
@@ -522,6 +748,8 @@ pub use spectacular_macros::before_each;
 /// In [`spec!`] blocks, use `after_each { ... }` or
 /// `after_each |name: &Type, name: Type| { ... }`.
 ///
+/// # Fire-and-forget
+///
 /// ```
 /// use spectacular::{test_suite, after_each};
 ///
@@ -533,6 +761,31 @@ pub use spectacular_macros::before_each;
 ///     #[test]
 ///     fn my_test() {
 ///         assert!(true);
+///     }
+/// }
+/// # fn main() {}
+/// ```
+///
+/// # Receiving context
+///
+/// ```
+/// use spectacular::{test_suite, before_each, after_each};
+///
+/// #[test_suite]
+/// mod with_context {
+///     #[before_each]
+///     fn setup() -> String {
+///         "hello".to_string()
+///     }
+///
+///     #[after_each]
+///     fn cleanup(val: String) {
+///         assert_eq!(val, "hello");
+///     }
+///
+///     #[test]
+///     fn my_test(val: String) {
+///         assert_eq!(val, "hello");
 ///     }
 /// }
 /// # fn main() {}

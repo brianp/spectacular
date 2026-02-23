@@ -807,13 +807,86 @@ spec! {
     }
 }
 
-// ===== Inferred return type (`-> _`) tests =====
+// ===== Inferred before context (void before + explicit &T consumers) =====
 
-// --- spec! style: sync before_each -> _ ---
+// --- spec! style: before with no return type, type inferred from after ---
+
+static SPEC_INFER_BEFORE_AFTER: AtomicBool = AtomicBool::new(false);
+
+spec! {
+    mod spec_before_inferred {
+        use super::*;
+
+        before {
+            "inferred-shared".to_string()
+        }
+
+        after |val: &String| {
+            assert_eq!(val, "inferred-shared");
+            SPEC_INFER_BEFORE_AFTER.store(true, Ordering::SeqCst);
+        }
+
+        it "receives ref from inferred before" |val: &String| {
+            assert_eq!(val, "inferred-shared");
+        }
+
+        it "also receives ref" |val: &String| {
+            assert_eq!(val, "inferred-shared");
+        }
+    }
+}
+
+// --- attr style: before with no return type, type inferred from test params ---
+
+#[test_suite]
+mod attr_before_inferred {
+    #[before]
+    pub fn init() {
+        42i32
+    }
+
+    #[test]
+    pub fn receives_ref(val: &i32) {
+        assert_eq!(*val, 42);
+    }
+}
+
+// --- spec! style: before inferred + before_each full stack ---
+
+static SPEC_INFER_BEFORE_FULL_AFTER_EACH: AtomicUsize = AtomicUsize::new(0);
+
+spec! {
+    mod spec_before_inferred_full_stack {
+        use super::*;
+
+        before {
+            100i32
+        }
+
+        before_each |n: &i32| -> String {
+            format!("item-{}", n)
+        }
+
+        after_each |n: &i32, s: String| {
+            assert_eq!(*n, 100);
+            assert_eq!(s, "item-100");
+            SPEC_INFER_BEFORE_FULL_AFTER_EACH.fetch_add(1, Ordering::SeqCst);
+        }
+
+        it "full stack with inferred before" |n: &i32, s: String| {
+            assert_eq!(*n, 100);
+            assert_eq!(s, "item-100");
+        }
+    }
+}
+
+// ===== Inferred context (void before_each + `_` params) tests =====
+
+// --- spec! style: sync before_each with inferred context ---
 
 spec! {
     mod spec_before_each_infer_sync {
-        before_each -> _ {
+        before_each {
             (String::from("inferred"), 42u32)
         }
 
@@ -829,7 +902,7 @@ spec! {
     }
 }
 
-// --- spec! style: async before_each -> _ with after_each using _ params ---
+// --- spec! style: async before_each with inferred context ---
 
 static SPEC_INFER_ASYNC_AFTER_EACH: AtomicUsize = AtomicUsize::new(0);
 
@@ -838,7 +911,7 @@ spec! {
         use super::*;
         tokio;
 
-        async before_each -> _ {
+        async before_each {
             tokio::task::yield_now().await;
             (String::from("async-inferred"), 99u64)
         }
@@ -856,7 +929,7 @@ spec! {
     }
 }
 
-// --- spec! style: before -> i32 + before_each |n: &i32| -> _ + after_each with _ params ---
+// --- spec! style: before -> i32 + before_each with inferred context ---
 
 static SPEC_INFER_FULL_AFTER_EACH: AtomicUsize = AtomicUsize::new(0);
 
@@ -866,7 +939,7 @@ spec! {
 
         before -> i32 { 7 }
 
-        before_each |n: &i32| -> _ {
+        before_each |n: &i32| {
             format!("val-{}", n)
         }
 
@@ -888,12 +961,12 @@ spec! {
     }
 }
 
-// --- attr style: sync #[before_each] fn setup() -> _ ---
+// --- attr style: sync #[before_each] with inferred context ---
 
 #[test_suite]
 mod attr_before_each_infer_sync {
     #[before_each]
-    fn setup() -> _ {
+    fn setup() {
         (String::from("attr-inferred"), 88u32)
     }
 
@@ -904,7 +977,7 @@ mod attr_before_each_infer_sync {
     }
 }
 
-// --- attr style: async #[before_each] async fn setup() -> _ ---
+// --- attr style: async #[before_each] with inferred context ---
 
 static ATTR_INFER_ASYNC_AFTER_EACH: AtomicUsize = AtomicUsize::new(0);
 
@@ -913,7 +986,7 @@ mod attr_before_each_infer_async {
     use super::*;
 
     #[before_each]
-    pub async fn setup() -> _ {
+    pub async fn setup() {
         tokio::task::yield_now().await;
         (String::from("attr-async"), 77u64)
     }
@@ -932,7 +1005,7 @@ mod attr_before_each_infer_async {
     }
 }
 
-// --- attr style: full stack before -> i32 + before_each -> _ ---
+// --- attr style: full stack before -> i32 + before_each with inferred context ---
 
 static ATTR_INFER_FULL_AFTER_EACH: AtomicUsize = AtomicUsize::new(0);
 
@@ -946,7 +1019,7 @@ mod attr_full_stack_infer {
     }
 
     #[before_each]
-    pub fn setup(n: &i32) -> _ {
+    pub fn setup(n: &i32) {
         format!("item-{}", n)
     }
 
@@ -968,7 +1041,7 @@ mod attr_full_stack_infer {
 
 spec! {
     mod spec_infer_single_value {
-        before_each -> _ {
+        before_each {
             vec![1, 2, 3]
         }
 

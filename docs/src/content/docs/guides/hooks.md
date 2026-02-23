@@ -193,7 +193,7 @@ mod with_shared_context {
 }
 ```
 
-Without a return type, `before` works as fire-and-forget (unchanged).
+Without a return type, `before` works as fire-and-forget — unless downstream consumers use explicit `&T` params, in which case the macro infers the `OnceLock<T>` type automatically (see [Inferred context](#inferred-context-no-return-type) below).
 
 ### `before_each` → owned `T` per test
 
@@ -306,9 +306,52 @@ mod full_context {
 }
 ```
 
-### Inferred return type (`-> _`)
+### Inferred context (no return type)
 
-When `before_each` returns a type that can't be named explicitly (e.g. `impl Trait`), use `-> _` to let the compiler infer it. The macro inlines the body at each call site instead of generating a function:
+Hooks can omit their return type and let the macro infer everything from downstream consumers.
+
+#### `before` — inferred from `&T` params
+
+When `before` has no `-> Type` but a downstream hook or test uses an explicit `&T` param, the macro infers `OnceLock<T>` automatically:
+
+**spec! style:**
+
+```rust
+use spectacular::spec;
+
+spec! {
+    mod inferred_before {
+        before { String::from("shared") }
+
+        it "receives shared ref" |val: &String| {
+            assert_eq!(val, "shared");
+        }
+    }
+}
+```
+
+**Attribute style:**
+
+```rust
+use spectacular::{test_suite, before};
+
+#[test_suite]
+mod inferred_before {
+    #[before]
+    fn init() {
+        42i32
+    }
+
+    #[test]
+    fn receives_ref(val: &i32) {
+        assert_eq!(*val, 42);
+    }
+}
+```
+
+#### `before_each` — inferred from `_` params
+
+When `before_each` has no return type, the last expression of the body **is** the context passed to tests. The macro inlines the body and lets the compiler infer types. Tests and `after_each` use `_` as the param type:
 
 **spec! style:**
 
@@ -317,7 +360,7 @@ use spectacular::spec;
 
 spec! {
     mod inferred_return {
-        before_each -> _ {
+        before_each {
             (String::from("hello"), 42u32)
         }
 
@@ -341,7 +384,7 @@ use spectacular::{test_suite, before_each, after_each};
 #[test_suite]
 mod inferred_return {
     #[before_each]
-    fn setup() -> _ {
+    fn setup() {
         (String::from("hello"), 42u32)
     }
 
@@ -358,7 +401,7 @@ mod inferred_return {
 }
 ```
 
-`-> _` is **not** supported on `before` because it stores context in `OnceLock<T>`, which requires a concrete type. The macro emits a compile error if you try.
+The macro detects `_`-typed params in tests or `after_each` and automatically inlines the `before_each` body. Without `_` params or `&T` consumers, hooks with no return type are fire-and-forget as usual.
 
 ### How params are distinguished
 

@@ -32,19 +32,20 @@ You can also use `mod name` directly instead of `describe "string"`.
 | `it` | `it "desc" { body }` | Defines a test case |
 | `it` | `it "desc" \|params\| { body }` | Test with context params |
 | `before` | `before { body }` | Once-per-group setup (fire-and-forget) |
-| `before` | `before -> Type { body }` | Once-per-group setup returning shared context |
+| `before` | `before -> Type { body }` | Once-per-group setup returning shared context (explicit) |
+| `before` | `before { body }` | Once-per-group setup with inferred context (when consumers use `&T` params) |
 | `after` | `after { body }` | Once-per-group teardown |
 | `after` | `after \|params\| { body }` | Teardown receiving shared context |
 | `before_each` | `before_each { body }` | Per-test setup (fire-and-forget) |
 | `before_each` | `before_each \|params\| -> Type { body }` | Per-test setup with context |
-| `before_each` | `before_each -> _ { body }` | Per-test setup with inferred return type |
+| `before_each` | `before_each { body }` | Per-test setup with inferred context (when tests use `_` params) |
 | `after_each` | `after_each { body }` | Per-test teardown |
 | `after_each` | `after_each \|params\| { body }` | Teardown receiving context |
 | `suite;` | `suite;` | Opt into suite hooks |
 | `tokio;` | `tokio;` | Use tokio async runtime |
 | `async_std;` | `async_std;` | Use async-std async runtime |
 
-Pipe params use `|name: Type, name: Type|` syntax. Reference params (`&T`) bind from `before` context; owned params bind from `before_each` context. Use `_` as a type for owned params or as the return type of `before_each` when the type can't be named (e.g. `impl Trait`).
+Pipe params use `|name: Type, name: Type|` syntax. Reference params (`&T`) bind from `before` context; owned params bind from `before_each` context. Use `_` as a param type when the type should be inferred from `before_each`'s last expression. When `before` has no return type but consumers use explicit `&T` params, the macro infers the `OnceLock<T>` type automatically.
 
 ### `suite!`
 
@@ -86,9 +87,12 @@ fn setup() { }            // fire-and-forget
 
 #[before]
 fn setup() -> PgPool { }  // returns shared context (OnceLock<PgPool>)
+
+#[before]
+fn setup() { 42i32 }      // inferred context when consumers use &i32 params
 ```
 
-When returning a value, other hooks and tests receive `&T` via reference parameters.
+When returning a value, other hooks and tests receive `&T` via reference parameters. When there is no return type but downstream consumers use explicit `&T` params, the macro infers the `OnceLock<T>` type automatically.
 
 ### `#[after]`
 
@@ -116,13 +120,11 @@ fn setup() -> TestContext { }                 // returns per-test context
 #[before_each]
 fn setup(pool: &PgPool) -> TestContext { }   // receives shared, returns per-test
 
-#[before_each]
-fn setup() -> _ { /* impl Trait ok */ }      // inferred return type (body inlined)
 ```
 
 Reference params bind from `#[before]` context. Return value is passed as owned to tests and `#[after_each]`.
 
-When the return type is `_`, the function body is inlined at each call site instead of generating a named function. This allows returning types that can't be written explicitly (e.g. `impl Trait`). Test and `#[after_each]` params should also use `_` for the corresponding type.
+When `#[before_each]` has no return type and tests or `#[after_each]` use `_`-typed params, the function body is inlined at each call site. The last expression becomes the context, with types inferred by the compiler.
 
 ### `#[after_each]`
 

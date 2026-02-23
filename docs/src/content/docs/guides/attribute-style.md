@@ -197,9 +197,34 @@ The macro distinguishes context sources by type:
 - **Reference params (`&T`)** → bound from `#[before]` context (shared, read-only)
 - **Owned params (`T`)** → bound from `#[before_each]` context (per-test)
 
-### Inferred return type (`-> _`)
+### Inferred context (no return type)
 
-When `#[before_each]` returns a type that can't be named (e.g. `impl Trait`), use `-> _`:
+Hooks can omit their return type and let the macro infer everything from downstream consumers.
+
+#### `#[before]` — inferred from `&T` params
+
+When `#[before]` has no return type but a downstream hook or test uses an explicit `&T` param, the macro infers `OnceLock<T>` automatically:
+
+```rust
+use spectacular::{test_suite, before};
+
+#[test_suite]
+mod inferred_before {
+    #[before]
+    fn init() {
+        42i32
+    }
+
+    #[test]
+    fn receives_ref(val: &i32) {
+        assert_eq!(*val, 42);
+    }
+}
+```
+
+#### `#[before_each]` — inferred from `_` params
+
+When `#[before_each]` has no return type, the last expression of the body **is** the context. Tests use `_` as the param type:
 
 ```rust
 use spectacular::{test_suite, before_each};
@@ -207,7 +232,7 @@ use spectacular::{test_suite, before_each};
 #[test_suite]
 mod inferred_context {
     #[before_each]
-    fn setup() -> _ {
+    fn setup() {
         (String::from("hello"), 42u32)
     }
 
@@ -219,20 +244,19 @@ mod inferred_context {
 }
 ```
 
-The macro inlines the function body instead of generating a named function, allowing the compiler to infer the type. Use `_` for the corresponding params in tests and `#[after_each]`.
-
-`-> _` is **not** supported on `#[before]` (requires concrete type for `OnceLock<T>`).
+The macro detects `_`-typed params in tests or `#[after_each]` and automatically inlines the `#[before_each]` body. Without `_` params or `&T` consumers, hooks with no return type are fire-and-forget as usual.
 
 ### Context reference
 
 | Pattern | Description |
 |---------|-------------|
-| `fn init() -> T` | `#[before]` returning shared context |
+| `fn init() -> T` | `#[before]` returning shared context (explicit) |
+| `fn init()` | `#[before]` with inferred context (when consumers use `&T` params) |
 | `fn cleanup(x: &T)` | `#[after]` receiving shared context |
 | `fn setup(x: &T) -> U` | `#[before_each]` with shared input, owned output |
-| `fn setup() -> _` | `#[before_each]` with inferred return type |
+| `fn setup()` | `#[before_each]` with inferred context (when tests use `_` params) |
 | `fn teardown(x: &T, y: U)` | `#[after_each]` with shared + owned |
 | `fn teardown(x: &T, y: _)` | `#[after_each]` with inferred owned type |
 | `fn test_name(x: &T, y: U)` | `#[test]` with shared + owned |
 
-Hooks without return types or params continue to work as fire-and-forget (unchanged).
+Hooks without return types or `_` params continue to work as fire-and-forget (unchanged).
