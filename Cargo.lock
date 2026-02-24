@@ -10,7 +10,7 @@ checksum = "843867be96c8daad0d758b57df9392b6d8d271134fce549de6ce169ff98a92af"
 
 [[package]]
 name = "cargo-spectacular"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "crossterm",
  "serde",
@@ -266,7 +266,7 @@ checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
 
 [[package]]
 name = "spectacular"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "spectacular-macros",
  "tokio",
@@ -274,7 +274,7 @@ dependencies = [
 
 [[package]]
 name = "spectacular-macros"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "proc-macro2",
  "quote",

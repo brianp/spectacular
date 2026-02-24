@@ -1,6 +1,6 @@
 [package]
 name = "spectacular"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 description = "An RSpec-inspired test framework for Rust with stackable before/after hooks"
 license = "MIT"
@@ -14,7 +14,7 @@ tokio = ["spectacular-macros/tokio"]
 async-std = ["spectacular-macros/async-std"]
 
 [dependencies]
-spectacular-macros = { version = "0.1.0", path = "../spectacular-macros" }
+spectacular-macros = { version = "0.2.0", path = "../spectacular-macros" }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
